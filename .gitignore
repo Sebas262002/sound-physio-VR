@@ -1,0 +1,62 @@
+# Unity
+unity_projects/*/Library/
+unity_projects/*/Temp/
+unity_projects/*/Obj/
+unity_projects/*/Logs/
+unity_projects/*/UserSettings/
+unity_projects/*/MemoryCaptures/
+unity_projects/*/*.csproj
+unity_projects/*/*.sln
+unity_projects/*/*.pidb
+unity_projects/*/*.booproj
+unity_projects/*/*.svd
+unity_projects/*/*.pdb
+unity_projects/*/*.mdb
+unity_projects/*/*.VSCode
+unity_projects/*/*.opendb
+unity_projects/*/*.VC.db
+
+# Python
+python/__pycache__/
+python/*/__pycache__/
+python/*.pyc
+python/*.pyo
+python/*.pyd
+python/.Python
+python/venv/
+python/ENV/
+python/env/
+python/.env
+python/*.egg-info/
+python/.eggs/
+python/dist/
+python/build/
+
+# Audio files (large files)
+audio_estimulos/*.wav
+audio_estimulos/*.mp3
+audio_estimulos/*.flac
+
+# Data files (large files)
+datos/sesiones/audio/
+datos/procesados/*.csv
+datos/baseline/
+
+# Results
+resultados/graficas/*.png
+resultados/tablas/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.gitignore
