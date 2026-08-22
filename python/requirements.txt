@@ -1,0 +1,32 @@
+# Sensor cardíaco (BLE)
+bleak
+
+# Audio (captura, reproducción, análisis)
+sounddevice
+soundfile
+librosa
+
+# Datos y señales
+numpy
+pandas
+scipy
+
+# Gráficas
+matplotlib
+
+# Base de datos (SQL Server, pyodbc puro - sin ORM)
+pyodbc
+python-dotenv
+
+# Interfaz de escritorio (app_investigador.py)
+flet
+flet-charts
+openpyxl
+
+# Reporte PDF de participante (reporte_pdf.py)
+reportlab
+Pillow
+
+# Puente visual con Unity/Meta Quest 2 (vr/unity_osc.py) — SOLO visual, el
+# audio se sigue reproduciendo por sounddevice como siempre.
+python-osc

@@ -18,6 +18,18 @@ unity_projects/*.mdb
 unity_projects/*.VSCode
 unity_projects/*.opendb
 unity_projects/*.VC.db
+unity_projects/.vs/
+
+# Assets de terceros pesados (paquetes de Unity Asset Store / librerías de
+# texturas) - se instalan localmente, no van al repo para no bloatearlo.
+unity_projects/Assets/Fantasy Skybox FREE/
+unity_projects/Assets/Fantasy Skybox FREE.meta
+unity_projects/Assets/Resources/Skyboxes/
+unity_projects/Assets/Resources/Skyboxes.meta
+
+# Carpeta vacía sin usar, creada por accidente en el Editor
+unity_projects/Assets/New Folder/
+unity_projects/Assets/New Folder.meta
 
 # Python
 python/__pycache__/
@@ -34,6 +46,9 @@ python/*.egg-info/
 python/.eggs/
 python/dist/
 python/build/
+
+# Credenciales de base de datos - nunca se suben (ver .env.example)
+.env
 
 # Audio, datos y resultados: este repo es solo el CÓDIGO del programa.
 # Los estímulos generados, las grabaciones/CSV/JSON de sesiones y los

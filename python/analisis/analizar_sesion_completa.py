@@ -175,35 +175,36 @@ def _df_a_markdown(df: pd.DataFrame) -> str:
     return "\n".join([encabezado, separador, *filas])
 
 
-def analizar_sesion_completa(
+def analizar_metricas_sesion(
     participante_id: Optional[str] = None,
     ruta_csv: Optional[Path] = None,
     ruta_wav: Optional[Path] = None,
     ruta_json_eventos: Optional[Path] = None,
     generar_grafica: bool = True,
-) -> Path:
-    """Ejecuta el pipeline completo de análisis y arma un reporte Markdown consolidado.
+) -> dict:
+    """Corre el pipeline de análisis (sincronizador + HR/HRV + respiración + recomendador)
+    y devuelve las métricas por bloque como dict/DataFrame, SIN generar el reporte Markdown.
 
-    Se puede llamar de dos formas:
-      - Con participante_id solo: busca automáticamente sus 3 archivos más
-        recientes en datos/sesiones/ (ver _encontrar_archivos_participante()).
-      - Con las rutas explícitas (ruta_csv, ruta_json_eventos obligatorias;
-        ruta_wav opcional) — así lo llama sesion_completa.py justo después
-        de guardar los 3 archivos de una sesión recién capturada, sin
-        depender de que sean "los más recientes" en disco.
+    Extraído de analizar_sesion_completa() (que sigue existiendo tal cual,
+    ahora como una envoltura delgada sobre esta función) para que otros
+    consumidores de las métricas — bd_sqlserver.py al guardar una sesión en
+    SQL Server, migrar_csv_a_sqlserver.py al migrar sesiones piloto — puedan
+    reutilizar exactamente el mismo cálculo sin tener que generar (ni
+    parsear) el .md.
 
-    Args:
-        participante_id: ID del participante. Si se omite, se deriva del
-            nombre de ruta_csv.
-        ruta_csv: CSV cardíaco. Si es None, se busca junto con participante_id.
-        ruta_wav: WAV de audio. Si es None, se omite el análisis respiratorio
-            y la fila "respiraciones_min" queda en NaN para todos los bloques.
-        ruta_json_eventos: JSON de eventos de estímulos.
-        generar_grafica: Si True, genera y guarda la gráfica de 4 paneles
-            (ver AnalisisSesion.graficar_sesion()) y la referencia en el reporte.
+    Ver analizar_sesion_completa() para la documentación completa de los
+    argumentos (son los mismos).
 
     Returns:
-        Path: Ruta del reporte Markdown generado.
+        dict: participante_id (str), resumen_general (dict, ver
+            AnalisisSesion.resumen_general()), tabla_combinada (pd.DataFrame,
+            una fila por bloque contiguo: condicion, estimulo, duracion_seg,
+            hr_media, hr_std, hr_min, hr_max, sdnn, rmssd, pnn50,
+            respiraciones_min), resultado_recomendacion (Optional[dict]:
+            condicion_recomendada, score, ranking_completo — None si no hay
+            bloque "baseline"), ruta_grafica_sesion (Optional[Path]),
+            ruta_csv (Path), ruta_wav (Optional[Path]), ruta_json_eventos (Path),
+            ruta_tabla_unificada (Optional[Path]).
     """
     if ruta_csv is None or ruta_json_eventos is None:
         if participante_id is None:
@@ -310,16 +311,71 @@ def analizar_sesion_completa(
     else:
         print("  No hay bloque 'baseline': no se puede calcular una recomendación con baseline propio.")
 
-    ruta_reporte = _generar_reporte_md(
+    return {
+        "participante_id": participante_id,
+        "resumen_general": resumen_general,
+        "tabla_combinada": tabla_combinada,
+        "resultado_recomendacion": resultado_recomendacion,
+        "ruta_grafica_sesion": ruta_grafica_sesion,
+        "ruta_csv": ruta_csv,
+        "ruta_wav": ruta_wav,
+        "ruta_json_eventos": ruta_json_eventos,
+        "ruta_tabla_unificada": ruta_tabla_unificada,
+    }
+
+
+def analizar_sesion_completa(
+    participante_id: Optional[str] = None,
+    ruta_csv: Optional[Path] = None,
+    ruta_wav: Optional[Path] = None,
+    ruta_json_eventos: Optional[Path] = None,
+    generar_grafica: bool = True,
+) -> Path:
+    """Ejecuta el pipeline completo de análisis y arma un reporte Markdown consolidado.
+
+    Envoltura delgada sobre analizar_metricas_sesion(): corre exactamente
+    el mismo análisis y arma, además, el reporte .md legible en
+    resultados/reportes/ (ver _generar_reporte_md()).
+
+    Se puede llamar de dos formas:
+      - Con participante_id solo: busca automáticamente sus 3 archivos más
+        recientes en datos/sesiones/ (ver _encontrar_archivos_participante()).
+      - Con las rutas explícitas (ruta_csv, ruta_json_eventos obligatorias;
+        ruta_wav opcional) — así lo llama sesion_completa.py justo después
+        de guardar los 3 archivos de una sesión recién capturada, sin
+        depender de que sean "los más recientes" en disco.
+
+    Args:
+        participante_id: ID del participante. Si se omite, se deriva del
+            nombre de ruta_csv.
+        ruta_csv: CSV cardíaco. Si es None, se busca junto con participante_id.
+        ruta_wav: WAV de audio. Si es None, se omite el análisis respiratorio
+            y la fila "respiraciones_min" queda en NaN para todos los bloques.
+        ruta_json_eventos: JSON de eventos de estímulos.
+        generar_grafica: Si True, genera y guarda la gráfica de 4 paneles
+            (ver AnalisisSesion.graficar_sesion()) y la referencia en el reporte.
+
+    Returns:
+        Path: Ruta del reporte Markdown generado.
+    """
+    resultado = analizar_metricas_sesion(
         participante_id=participante_id,
-        resumen_general=resumen_general,
-        tabla_combinada=tabla_combinada,
-        resultado_recomendacion=resultado_recomendacion,
-        ruta_grafica_sesion=ruta_grafica_sesion,
         ruta_csv=ruta_csv,
         ruta_wav=ruta_wav,
         ruta_json_eventos=ruta_json_eventos,
-        ruta_tabla_unificada=ruta_tabla_unificada,
+        generar_grafica=generar_grafica,
+    )
+
+    ruta_reporte = _generar_reporte_md(
+        participante_id=resultado["participante_id"],
+        resumen_general=resultado["resumen_general"],
+        tabla_combinada=resultado["tabla_combinada"],
+        resultado_recomendacion=resultado["resultado_recomendacion"],
+        ruta_grafica_sesion=resultado["ruta_grafica_sesion"],
+        ruta_csv=resultado["ruta_csv"],
+        ruta_wav=resultado["ruta_wav"],
+        ruta_json_eventos=resultado["ruta_json_eventos"],
+        ruta_tabla_unificada=resultado["ruta_tabla_unificada"],
     )
 
     print(f"\n=== Reporte generado: {ruta_reporte} ===")

@@ -405,8 +405,11 @@ class AnalisisSesion:
             condicion: colores[i % len(colores)] for i, condicion in enumerate(condiciones_unicas)
         }
 
-        fig, ejes = plt.subplots(2, 2, figsize=(14, 9))
-        ((ax_hr, ax_rr), (ax_box, ax_barras)) = ejes
+        # 4 filas x 1 columna (apilados verticalmente) en vez de una cuadrícula 2x2 — a
+        # pedido explícito: con los 4 en cuadrícula, cada panel queda chico y difícil de
+        # leer cuando se embebe grande en el reporte PDF (ver app_investigador.py).
+        fig, ejes = plt.subplots(4, 1, figsize=(10, 20))
+        ax_hr, ax_rr, ax_box, ax_barras = ejes
 
         # --- Subplot 1: HR en el tiempo con bandas de color por condición ---
         # Se grafica df_valido (sin los artefactos HR=0 de conexión BLE inicial, ver

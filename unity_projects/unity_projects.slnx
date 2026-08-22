@@ -1,4 +1,6 @@
 ﻿<Solution>
+  <Project Path="extOSC.csproj" />
+  <Project Path="extOSC.Editor.csproj" />
   <Project Path="Assembly-CSharp-Editor.csproj" />
   <Project Path="Unity.XR.Interaction.Toolkit.Samples.InteractionSimulator.csproj" />
   <Project Path="Assembly-CSharp.csproj" />

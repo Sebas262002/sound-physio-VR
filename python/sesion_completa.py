@@ -206,34 +206,84 @@ Binaural e Isocrónico sin ningún ajuste adicional — la comparación
 "solfeggio vs. preferencia" (el hallazgo central de la tesis, ver
 analizar_sesion_completa.py) simplemente lee ambas filas de la misma
 tabla de métricas por bloque.
+
+PERSISTENCIA EN SQL SERVER (guardar_en_bd):
+Además de los 3 archivos locales (CSV/WAV/JSON, que SIEMPRE se guardan —
+SQL Server es un agregado en paralelo, nunca los reemplaza), con
+guardar_en_bd=True (default) la sesión también queda en las tablas
+participantes/sesiones/pruebas de SQL Server (ver
+python/database/bd_sqlserver.py). Para esto se reutiliza
+analizar_metricas_sesion() UNA sola vez (no dos): la misma tabla de
+métricas por bloque alimenta tanto el reporte .md (si
+analizar_automaticamente=True) como las filas de "pruebas" — evita
+correr el análisis dos veces.
+
+Como este módulo nunca recolectó datos demográficos del participante
+(edad/género/mano dominante — no hay ningún paso del protocolo que los
+pida), si el participante no existe todavía en 'participantes' se
+auto-registra con esos campos en NULL y una observación que lo deja
+explícito. Hace falta completarlos a mano (por SQL directo, o editando la
+fila) si se necesitan para el análisis por esos factores.
+
+Si SQL Server no está disponible (servidor apagado, credenciales
+inválidas, etc.), el guardado en base de datos falla con una advertencia
+impresa — la sesión capturada NUNCA se pierde, ya está en disco antes de
+intentar guardarla en SQL Server.
 """
 
+import math
 import re
 import sys
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import soundfile as sf
 
 sys.path.insert(0, r"C:\Tesis_Kevin\python\sensor")
 sys.path.insert(0, r"C:\Tesis_Kevin\python\audio")
 sys.path.insert(0, r"C:\Tesis_Kevin\python\analisis")
+sys.path.insert(0, r"C:\Tesis_Kevin\python\database")
+sys.path.insert(0, r"C:\Tesis_Kevin\python")  # para "import vr.unity_osc" (paquete, no módulo suelto)
 
 from simulador_cardiaco import SimuladorCardiaco  # noqa: E402
 from capturar_sesion import CapturaSesion  # noqa: E402
 from sensor_wahoo import SensorWahoo, HiloSensorBLE  # noqa: E402
 from capturar_respiracion import CapturaAudio  # noqa: E402
 from reproductor_estimulos import ReproductorEstimulos  # noqa: E402
-from analizar_sesion_completa import analizar_sesion_completa  # noqa: E402
+from analizar_sesion_completa import analizar_metricas_sesion, _generar_reporte_md  # noqa: E402
+from bd_sqlserver import BaseDatosTesis, mapear_bloque_a_prueba  # noqa: E402
+from vr.unity_osc import UnityOSC  # noqa: E402
 
 CARPETA_ESTIMULOS = Path(r"C:\Tesis_Kevin\audio_estimulos")
 CARPETA_SESIONES = Path(r"C:\Tesis_Kevin\datos\sesiones")
 
 
-def obtener_protocolo_tesis_final() -> list[dict]:
+# Skybox de Unity por bloque, solo relevante si usar_vr=True (ver
+# obtener_protocolo_tesis_final() y vr/unity_osc.py). Los bloques de descanso
+# NO tienen entrada acá a propósito: "usar el skybox del bloque anterior" se
+# resuelve programáticamente más abajo, no se hardcodea por duplicado (si
+# alguna vez cambia el orden de bloques, no hay dos lugares que mantener
+# sincronizados a mano).
+_AMBIENTE_VR_POR_BLOQUE = {
+    "baseline": "FS002_Day",  # dia luminoso calmado
+    "solfeggio_528Hz": "FS000_Day_06",  # dia con luna, magico
+    "binaural_alpha": "FS002_Sunset",  # atardecer profundo
+    "isocronico_alpha": "FS013_Day",  # dia alternativo, energetico
+    "preferencia": "FS002_Night",  # noche intima
+    "cierre": "FS017_Sunset",  # atardecer de despedida
+}
+
+
+def obtener_protocolo_tesis_final(
+    duracion_baseline_seg: int = 60,
+    duracion_estimulo_seg: int = 60,
+    duracion_descanso_seg: int = 30,
+    duracion_cierre_seg: int = 60,
+    usar_vr: bool = False,
+) -> list[dict]:
     """Protocolo experimental oficial de la tesis (ver PROTOCOLO EXPERIMENTAL
     FINAL DE LA TESIS en el docstring del módulo para la justificación
     completa de duraciones y selección de estímulos).
@@ -247,25 +297,59 @@ def obtener_protocolo_tesis_final() -> list[dict]:
     ejecutar_sesion_completa() llama a _resolver_audio_real() — igual que
     cualquier otro protocolo_personalizado con reproducir_audio_real=True.
 
-    Duración total: 450s (7.5 min), sin contar estabilización.
+    Duración total con los defaults: 450s (7.5 min), sin contar estabilización.
+
+    ADVERTENCIA sobre los parámetros de duración: los defaults (60/60/30/60)
+    son los valores REALES y científicamente justificados del protocolo de
+    tesis (Task Force ESC/NASPE 1996 para que SDNN sea una estimación
+    confiable, ver el docstring del módulo). Estos parámetros existen para
+    poder ACORTAR el protocolo durante pruebas de desarrollo de la interfaz
+    (ver "Modo prueba rápida" en app_investigador.py) — nunca para sesiones
+    con participantes reales: un baseline de 20s o menos no alcanza a
+    acumular suficientes intervalos R-R para SDNN, y esos datos no servirían
+    para el análisis de la tesis.
+
+    Args:
+        duracion_baseline_seg: Duración del bloque "baseline" inicial.
+        duracion_estimulo_seg: Duración de cada uno de los 4 bloques de
+            estímulo (solfeggio_528Hz, binaural_alpha, isocronico_alpha,
+            preferencia).
+        duracion_descanso_seg: Duración de los 3 bloques de descanso entre estímulos.
+        duracion_cierre_seg: Duración del bloque de cierre final.
+        usar_vr: Si True, cada bloque trae además la clave "ambiente_vr" con
+            el nombre del skybox de Unity que corresponde mostrar durante ese
+            bloque (ver _AMBIENTE_VR_POR_BLOQUE y vr/unity_osc.py). Los
+            bloques de descanso heredan el skybox del bloque ANTERIOR (no
+            tienen uno propio en _AMBIENTE_VR_POR_BLOQUE). Si False (default),
+            el protocolo queda EXACTAMENTE igual que antes de esta
+            integración — ningún bloque trae "ambiente_vr".
 
     Returns:
         list[dict]: 9 bloques (baseline, solfeggio_528Hz, descanso1,
             binaural_alpha, descanso2, isocronico_alpha, descanso3,
             preferencia, cierre), cada uno con "tipo", "nombre" y
-            "duracion_seg".
+            "duracion_seg" (y "ambiente_vr" si usar_vr=True).
     """
-    return [
-        {"tipo": "silencio", "duracion_seg": 60, "nombre": "baseline"},
-        {"tipo": "estimulo", "nombre": "solfeggio_528Hz", "duracion_seg": 60},
-        {"tipo": "silencio", "duracion_seg": 30, "nombre": "descanso1"},
-        {"tipo": "estimulo", "nombre": "binaural_alpha", "duracion_seg": 60},
-        {"tipo": "silencio", "duracion_seg": 30, "nombre": "descanso2"},
-        {"tipo": "estimulo", "nombre": "isocronico_alpha", "duracion_seg": 60},
-        {"tipo": "silencio", "duracion_seg": 30, "nombre": "descanso3"},
-        {"tipo": "estimulo", "nombre": "preferencia", "duracion_seg": 60},
-        {"tipo": "silencio", "duracion_seg": 60, "nombre": "cierre"},
+    protocolo = [
+        {"tipo": "silencio", "duracion_seg": duracion_baseline_seg, "nombre": "baseline"},
+        {"tipo": "estimulo", "nombre": "solfeggio_528Hz", "duracion_seg": duracion_estimulo_seg},
+        {"tipo": "silencio", "duracion_seg": duracion_descanso_seg, "nombre": "descanso1"},
+        {"tipo": "estimulo", "nombre": "binaural_alpha", "duracion_seg": duracion_estimulo_seg},
+        {"tipo": "silencio", "duracion_seg": duracion_descanso_seg, "nombre": "descanso2"},
+        {"tipo": "estimulo", "nombre": "isocronico_alpha", "duracion_seg": duracion_estimulo_seg},
+        {"tipo": "silencio", "duracion_seg": duracion_descanso_seg, "nombre": "descanso3"},
+        {"tipo": "estimulo", "nombre": "preferencia", "duracion_seg": duracion_estimulo_seg},
+        {"tipo": "silencio", "duracion_seg": duracion_cierre_seg, "nombre": "cierre"},
     ]
+
+    if usar_vr:
+        ambiente_previo: Optional[str] = None
+        for bloque in protocolo:
+            ambiente = _AMBIENTE_VR_POR_BLOQUE.get(bloque["nombre"], ambiente_previo)
+            bloque["ambiente_vr"] = ambiente
+            ambiente_previo = ambiente
+
+    return protocolo
 
 
 def _calcular_duracion_total_protocolo(protocolo: list[dict]) -> float:
@@ -508,6 +592,57 @@ def _hilo_sensor(
         print(f"\n[hilo sensor] ERROR: {error}")
 
 
+def _hilo_observador_vr(
+    protocolo: list[dict],
+    estado_compartido: dict,
+    unity_osc: UnityOSC,
+    detener: threading.Event,
+) -> None:
+    """Cuerpo del hilo D (opcional, solo si usar_vr=True): le avisa a Unity cuando
+    cambia el bloque en curso, EN PARALELO al audio — sin tocar
+    ReproductorEstimulos ni reproducir_protocolo() para nada.
+
+    Funciona por polling: reproducir_protocolo() (sin modificar, ver
+    audio/reproductor_estimulos.py:321-325) ya actualiza
+    estado_compartido["estimulo_actual"] = nombre_del_bloque justo antes de
+    empezar cada bloque — este hilo solo OBSERVA ese mismo dict compartido
+    cada 0.2s y, cuando el nombre cambia, busca el "ambiente_vr" de ese bloque
+    en `protocolo`. No escribe nada en estado_compartido, no llama a nada de
+    sounddevice, no interfiere con el hilo de audio.
+
+    El envío a Unity se deduplica por VALOR de ambiente_vr, no por nombre de
+    bloque: un descanso que hereda el mismo skybox del bloque anterior (ver
+    obtener_protocolo_tesis_final()) NO dispara un cambiar_ambiente() de
+    nuevo — solo se manda cuando el skybox realmente cambia. Antes deduplicaba
+    por nombre de bloque, así que un descanso heredado SÍ reenviaba el mismo
+    valor (redundante pero inofensivo — Unity solo recargaba el mismo
+    material); se ajustó para que la cantidad de envíos OSC coincida con la
+    cantidad de transiciones visuales reales, que es lo que valida
+    vr/probar_integracion.py comparando contra _AMBIENTE_VR_POR_BLOQUE.
+
+    Args:
+        protocolo: Mismo protocolo con "ambiente_vr" por bloque (ver
+            obtener_protocolo_tesis_final(usar_vr=True)).
+        estado_compartido: El mismo dict que reproducir_protocolo() ya escribe.
+        unity_osc: Cliente ya construido (ver ejecutar_sesion_completa()).
+        detener: Se setea desde afuera cuando el bloque de estímulos terminó,
+            para que este hilo pare de sondear (daemon=True lo respalda si
+            igual quedara colgado por algún motivo).
+    """
+    mapa_ambiente = {b["nombre"]: b.get("ambiente_vr") for b in protocolo}
+    ultimo_bloque = None
+    ultimo_ambiente_enviado = None
+    while not detener.is_set():
+        bloque_actual = estado_compartido.get("estimulo_actual")
+        if bloque_actual and bloque_actual != ultimo_bloque and bloque_actual in mapa_ambiente:
+            ambiente = mapa_ambiente[bloque_actual]
+            if ambiente is not None and ambiente != ultimo_ambiente_enviado:
+                unity_osc.cambiar_ambiente(ambiente)
+                ultimo_ambiente_enviado = ambiente
+            ultimo_bloque = bloque_actual
+        detener.wait(0.2)
+
+
 def _hilo_estimulos(
     reproductor: ReproductorEstimulos,
     protocolo: list[dict],
@@ -516,6 +651,8 @@ def _hilo_estimulos(
     resultado: dict,
     lock: threading.Lock,
     silencioso: bool = False,
+    usar_vr: bool = False,
+    unity_osc: Optional[UnityOSC] = None,
 ) -> None:
     """Cuerpo del hilo B: reproducción del protocolo de estímulos.
 
@@ -534,7 +671,20 @@ def _hilo_estimulos(
             simulador_multiparticipante.py, donde nada más corre en
             tiempo real) notificaría "fin" casi al instante y cortaría la
             captura del sensor tras una sola lectura.
+        usar_vr: Si True (y unity_osc no es None), lanza _hilo_observador_vr()
+            en paralelo — ver ese docstring. Default False: comportamiento
+            IDÉNTICO al de antes de esta integración, ni un hilo de más.
+        unity_osc: Cliente ya construido por ejecutar_sesion_completa(). Se
+            ignora si usar_vr=False.
     """
+    detener_vr = threading.Event()
+    hilo_vr: Optional[threading.Thread] = None
+    if usar_vr and unity_osc is not None:
+        hilo_vr = threading.Thread(
+            target=_hilo_observador_vr, args=(protocolo, estado_compartido, unity_osc, detener_vr), daemon=True, name="vr"
+        )
+        hilo_vr.start()
+
     try:
         eventos = reproductor.reproducir_protocolo(
             protocolo,
@@ -550,6 +700,12 @@ def _hilo_estimulos(
         with lock:
             resultado["error_estimulos"] = str(error)
         print(f"\n[hilo estimulos] ERROR: {error}")
+    finally:
+        # Pase lo que pase con el audio (éxito o excepción), el observador VR
+        # no tiene por qué seguir sondeando — se corta acá siempre.
+        detener_vr.set()
+        if hilo_vr is not None:
+            hilo_vr.join(timeout=1.0)
 
 
 def _hilo_audio(
@@ -585,6 +741,119 @@ def _hilo_audio(
             resultado["error_audio"] = str(error)
 
 
+def _valor_o_none(fila: Any, columna: str) -> Optional[float]:
+    """Extrae fila[columna] como float nativo, o None si falta o es NaN.
+
+    Las métricas de tabla_combinada vienen de pandas/numpy (ver
+    analizar_sesion.py); SQL Server/pyodbc necesita None (NULL), no NaN.
+    """
+    if columna not in fila:
+        return None
+    valor = fila[columna]
+    if valor is None:
+        return None
+    try:
+        if math.isnan(valor):
+            return None
+    except TypeError:
+        pass
+    return float(valor)
+
+
+def _guardar_en_sql_server(
+    participante_id: str, resultado_metricas: dict, duracion_total_real: float, usa_vr: bool = False
+) -> Optional[int]:
+    """Guarda una sesión ya analizada en SQL Server (sesiones + pruebas), en paralelo a los CSV.
+
+    Ver PERSISTENCIA EN SQL SERVER en el docstring del módulo. Nunca se
+    llama a esto si resultado_metricas es None (el análisis previo falló):
+    el caller ya se encarga de esa validación antes de invocar esta función.
+
+    Args:
+        participante_id: ID del participante de esta sesión.
+        resultado_metricas: dict devuelto por analizar_metricas_sesion()
+            (trae tabla_combinada y resumen_general).
+        duracion_total_real: Duración real de la sesión (segundos de pared,
+            sin contar estabilización) — respaldo si resumen_general no la trae.
+        usa_vr: Si la sesión corrió con Meta Quest 2 (ver usar_vr en
+            ejecutar_sesion_completa()) — se guarda tal cual en la columna
+            sesiones.usa_vr (ver bd_sqlserver.py), solo informativo.
+
+    Returns:
+        Optional[int]: id_sesion creado en SQL Server, o None si falló
+            cualquier parte del guardado (conexión, inserción, etc. — ver
+            logs de BaseDatosTesis para el detalle).
+    """
+    bd = BaseDatosTesis()
+    if not bd.conectar():
+        print("Advertencia: no se pudo conectar a SQL Server; la sesión no se guarda en base de datos.")
+        return None
+
+    try:
+        bd.registrar_participante(
+            participante_id,
+            edad=None,
+            genero=None,
+            mano_dominante=None,
+            observaciones="Auto-registrado por sesion_completa.py - completar datos demográficos.",
+        )
+
+        tabla = resultado_metricas["tabla_combinada"]
+        fila_baseline = tabla.loc[tabla["estimulo"] == "baseline"]
+        hr_baseline = _valor_o_none(fila_baseline.iloc[0], "hr_media") if not fila_baseline.empty else None
+        sdnn_baseline = _valor_o_none(fila_baseline.iloc[0], "sdnn") if not fila_baseline.empty else None
+        rmssd_baseline = _valor_o_none(fila_baseline.iloc[0], "rmssd") if not fila_baseline.empty else None
+
+        id_sesion = bd.crear_sesion(
+            participante_id,
+            hr_baseline,
+            rmssd_baseline,
+            sdnn_baseline,
+            notas="Registrado automáticamente por sesion_completa.py",
+            usa_vr=usa_vr,
+        )
+        if id_sesion is None:
+            print("Advertencia: no se pudo crear la fila de sesión en SQL Server.")
+            return None
+
+        duracion_total = resultado_metricas["resumen_general"].get("duracion_total_seg")
+        duracion_final = _valor_o_none({"d": duracion_total}, "d")
+        bd.actualizar_duracion_sesion(id_sesion, int(duracion_final if duracion_final is not None else duracion_total_real))
+
+        pruebas_guardadas = 0
+        for _, fila in tabla.iterrows():
+            info_prueba = mapear_bloque_a_prueba(fila["estimulo"])
+            if info_prueba is None:
+                continue  # bloques de reposo/silencio: no son "pruebas"
+
+            metricas_dict = {
+                "hr_promedio": fila.get("hr_media"),
+                "hr_min": fila.get("hr_min"),
+                "hr_max": fila.get("hr_max"),
+                "rmssd": fila.get("rmssd"),
+                "sdnn": fila.get("sdnn"),
+                "pnn50": fila.get("pnn50"),
+                "resp_por_min": fila.get("respiraciones_min"),
+            }
+            duracion_bloque = _valor_o_none(fila, "duracion_seg")
+
+            id_prueba = bd.registrar_prueba(
+                id_sesion,
+                participante_id,
+                info_prueba["tipo_estimulo"],
+                info_prueba["frecuencia_hz"],
+                metricas_dict,
+                duracion_seg=int(duracion_bloque) if duracion_bloque is not None else None,
+            )
+            if id_prueba is not None:
+                pruebas_guardadas += 1
+
+        print(f"Sesión guardada en SQL Server: id_sesion={id_sesion}, {pruebas_guardadas} prueba(s).")
+        return id_sesion
+    finally:
+        bd.desconectar()
+
+
 def ejecutar_sesion_completa(
     participante_id: str,
     protocolo_corto: bool = True,
@@ -598,6 +867,10 @@ def ejecutar_sesion_completa(
     preferencia_wav: Optional[Path] = None,
     dispositivo_salida_audio: Optional[int] = None,
     analizar_automaticamente: bool = True,
+    guardar_en_bd: bool = True,
+    usar_vr: bool = False,
+    unity_ip: str = "127.0.0.1",
+    unity_puerto: int = 8000,
 ) -> dict:
     """Ejecuta sensor cardíaco + grabación de audio + reproducción de estímulos en paralelo.
 
@@ -668,6 +941,28 @@ def ejecutar_sesion_completa(
             capturada (los 3 archivos ya están guardados en disco antes
             de intentar analizarlos). Si False, la función solo captura y
             guarda, sin analizar nada (comportamiento original).
+        guardar_en_bd: Si True (default), al terminar guarda la sesión en
+            SQL Server (tablas participantes/sesiones/pruebas — ver
+            PERSISTENCIA EN SQL SERVER en el docstring del módulo), en
+            paralelo a los 3 archivos locales (que se guardan siempre,
+            pase lo que pase con esto). Si el guardado falla (SQL Server
+            apagado, etc.), se imprime una advertencia y la sesión local
+            NO se pierde. Reutiliza el mismo análisis de métricas que
+            analizar_automaticamente (no se corre dos veces).
+        usar_vr: Si True, arma un UnityOSC y le avisa a Unity/Meta Quest 2 el
+            skybox correspondiente a cada bloque, en paralelo al audio (ver
+            vr/unity_osc.py y _hilo_observador_vr()) — SOLO afecta lo visual,
+            el audio se sigue reproduciendo exactamente igual que con
+            usar_vr=False. Solo tiene efecto real si el protocolo en uso trae
+            "ambiente_vr" por bloque (ver obtener_protocolo_tesis_final(),
+            se activa automáticamente si usar_protocolo_final=True también);
+            con protocolo_corto o protocolo_personalizado sin esa clave, no
+            pasa nada (no crashea, simplemente no hay skybox que cambiar). Si
+            Unity está apagado o no responde, la sesión sigue igual — nunca
+            se interrumpe la captura por esto (ver PERSISTENCIA / degradación
+            en el docstring del módulo).
+        unity_ip: IP donde escucha Unity. Ignorado si usar_vr=False.
+        unity_puerto: Puerto UDP donde Unity escucha. Ignorado si usar_vr=False.
 
     Returns:
         dict: participante_id, ruta_csv (Path), ruta_wav (Path o None si
@@ -676,7 +971,9 @@ def ejecutar_sesion_completa(
             sin contar la estabilización), resumen_estabilizacion (dict
             con hr_promedio, num_lecturas, tiempo_estabilizacion_seg),
             ruta_reporte (Path o None si analizar_automaticamente=False o
-            si el análisis automático falló).
+            si el análisis automático falló), id_sesion_bd (Optional[int]:
+            id de la fila creada en SQL Server, o None si guardar_en_bd=False
+            o si falló el guardado).
 
     Raises:
         RuntimeError: Si falla la captura cardíaca o la reproducción de
@@ -701,7 +998,7 @@ def ejecutar_sesion_completa(
                 "'preferencia' del protocolo final de la tesis necesita saber qué "
                 "audio reproducir para ese bloque."
             )
-        protocolo = obtener_protocolo_tesis_final()
+        protocolo = obtener_protocolo_tesis_final(usar_vr=usar_vr)
     elif protocolo_corto:
         # construir_protocolo_ejemplo() solo controla la duración de los bloques de
         # SILENCIO (duracion_silencio_seg/duracion_descanso_seg); los bloques de
@@ -783,6 +1080,18 @@ def ejecutar_sesion_completa(
     # resuelto rutas de audio real y a la vez pedirle al reproductor que no suene nada
     silencioso_efectivo = False if reproducir_audio_real else silencioso_estimulos
 
+    # --- VR (Meta Quest 2, solo visual) — ver vr/unity_osc.py y el docstring de
+    # usar_vr más arriba. unity_osc queda en None si usar_vr=False: nada de lo que
+    # sigue en esta función cambia de comportamiento en ese caso (default). ---
+    unity_osc: Optional[UnityOSC] = None
+    if usar_vr:
+        unity_osc = UnityOSC(ip=unity_ip, puerto=unity_puerto)
+        if not unity_osc.iniciar_sesion(participante_id):
+            print(
+                f"Advertencia: no se pudo avisarle a Unity que arrancó la sesión de "
+                f"{participante_id} (¿está la escena corriendo?) — la sesión continúa igual, sin VR."
+            )
+
     hilos = [
         threading.Thread(
             target=_hilo_sensor,
@@ -791,7 +1100,7 @@ def ejecutar_sesion_completa(
         ),
         threading.Thread(
             target=_hilo_estimulos,
-            args=(reproductor, protocolo, t0, estado_compartido, resultado, lock, silencioso_efectivo),
+            args=(reproductor, protocolo, t0, estado_compartido, resultado, lock, silencioso_efectivo, usar_vr, unity_osc),
             name="estimulos",
         ),
     ]
@@ -813,6 +1122,9 @@ def ejecutar_sesion_completa(
         hilo.start()
     for hilo in hilos:
         hilo.join()
+
+    if unity_osc is not None:
+        unity_osc.terminar_sesion()
 
     duracion_total_real = time.monotonic() - t0
 
@@ -861,22 +1173,54 @@ def ejecutar_sesion_completa(
     print(f"JSON estímulos: {ruta_json_estimulos}")
     print(f"Duración total real: {duracion_total_real:.1f}s (sin contar estabilización)")
 
-    # El análisis automático corre DESPUÉS de que los 3 archivos ya están guardados en
-    # disco — si falla, la sesión capturada no se pierde, solo no queda su reporte
-    ruta_reporte = None
-    if analizar_automaticamente:
-        print("\n=== Ejecutando análisis automático post-sesión ===")
+    # El análisis (y el guardado en SQL Server) corren DESPUÉS de que los 3 archivos ya
+    # están guardados en disco — si cualquiera de los dos falla, la sesión capturada no
+    # se pierde, solo no queda su reporte y/o su fila en la base de datos.
+    resultado_metricas = None
+    if analizar_automaticamente or guardar_en_bd:
+        print("\n=== Calculando métricas post-sesión ===")
         try:
-            ruta_reporte = analizar_sesion_completa(
+            resultado_metricas = analizar_metricas_sesion(
                 participante_id=participante_id,
                 ruta_csv=resultado["ruta_csv"],
                 ruta_wav=ruta_wav,
                 ruta_json_eventos=ruta_json_estimulos,
+                generar_grafica=analizar_automaticamente,
             )
         except Exception as error:
             print(
-                f"Advertencia: el análisis automático falló ({error}); "
+                f"Advertencia: el análisis de métricas post-sesión falló ({error}); "
                 "los 3 archivos de la sesión sí se guardaron correctamente."
+            )
+
+    ruta_reporte = None
+    if analizar_automaticamente and resultado_metricas is not None:
+        print("\n=== Generando reporte consolidado ===")
+        try:
+            ruta_reporte = _generar_reporte_md(
+                participante_id=resultado_metricas["participante_id"],
+                resumen_general=resultado_metricas["resumen_general"],
+                tabla_combinada=resultado_metricas["tabla_combinada"],
+                resultado_recomendacion=resultado_metricas["resultado_recomendacion"],
+                ruta_grafica_sesion=resultado_metricas["ruta_grafica_sesion"],
+                ruta_csv=resultado_metricas["ruta_csv"],
+                ruta_wav=resultado_metricas["ruta_wav"],
+                ruta_json_eventos=resultado_metricas["ruta_json_eventos"],
+                ruta_tabla_unificada=resultado_metricas["ruta_tabla_unificada"],
+            )
+            print(f"=== Reporte generado: {ruta_reporte} ===")
+        except Exception as error:
+            print(f"Advertencia: no se pudo generar el reporte Markdown ({error}).")
+
+    id_sesion_bd = None
+    if guardar_en_bd and resultado_metricas is not None:
+        print("\n=== Guardando sesión en SQL Server ===")
+        try:
+            id_sesion_bd = _guardar_en_sql_server(participante_id, resultado_metricas, duracion_total_real, usa_vr=usar_vr)
+        except Exception as error:
+            print(
+                f"Advertencia: no se pudo guardar en SQL Server ({error}); "
+                "los archivos locales sí se guardaron correctamente."
             )
 
     return {
@@ -887,6 +1231,7 @@ def ejecutar_sesion_completa(
         "duracion_total_seg": round(duracion_total_real, 2),
         "resumen_estabilizacion": resumen_estabilizacion,
         "ruta_reporte": ruta_reporte,
+        "id_sesion_bd": id_sesion_bd,
     }
 
 
@@ -903,3 +1248,5 @@ if __name__ == "__main__":
     print(f"WAV audio:      {resultado['ruta_wav']}")
     print(f"JSON estímulos: {resultado['ruta_json_estimulos']}")
     print(f"Duración total: {resultado['duracion_total_seg']}s")
+    print(f"Reporte:        {resultado['ruta_reporte']}")
+    print(f"id_sesion (BD): {resultado['id_sesion_bd']}")
