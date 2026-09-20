@@ -41,6 +41,7 @@ class SimuladorCardiaco:
         "solfeggio": -4.0,
         "binaural": -5.0,
         "isocronico": -3.0,
+        "paisaje": -4.5,
         "preferencia": -6.0,
         "estimulo_negativo": 8.0,
     }
@@ -67,7 +68,7 @@ class SimuladorCardiaco:
 
         Args:
             nueva_condicion: Una de "reposo", "solfeggio", "binaural",
-                "isocronico", "preferencia", "estimulo_negativo".
+                "isocronico", "paisaje", "preferencia", "estimulo_negativo".
 
         Raises:
             ValueError: Si nueva_condicion no es una condición reconocida.

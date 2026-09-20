@@ -21,6 +21,7 @@ python-dotenv
 # Interfaz de escritorio (app_investigador.py)
 flet
 flet-charts
+flet-web  # solo para interfaz/lanzar_web.py (panel en el navegador)
 openpyxl
 
 # Reporte PDF de participante (reporte_pdf.py)

@@ -707,6 +707,17 @@ class ChipGroup:
         if self._on_change_externo is not None:
             self._on_change_externo(e)
 
+    def establecer(self, valor: Optional[str]) -> None:
+        """Selecciona `valor` programáticamente, sin necesitar un click real —
+        para autocompletar el grupo desde afuera (ej. precargar género/mano
+        dominante de un participante ya existente, ver
+        _autocompletar_participante_existente() en app_investigador.py).
+        Reutiliza _seleccionar() tal cual, pasando None como evento — seguro
+        porque los únicos on_change externos de ChipGroup hoy (ver
+        FormularioParticipante._notificar) ignoran ese argumento.
+        """
+        self._seleccionar(valor, None)
+
     def build(self) -> ft.Control:
         """Returns:
         ft.Control: Fila de chips, lista para insertar en la vista.
@@ -883,7 +894,6 @@ class FormularioParticipante:
         campo_id (ft.TextField): ID del participante (autogenerado, editable).
         campo_edad (ft.TextField): Edad (numérica).
         grupo_genero (ChipGroup): Selector de género.
-        grupo_mano (ChipGroup): Selector de mano dominante.
         check_consentimiento (ft.Checkbox): Confirmación de consentimiento informado.
         campo_observaciones (ft.TextField): Notas libres, opcional.
     """
@@ -937,10 +947,11 @@ class FormularioParticipante:
             on_change=self._notificar,
             opciones=[("M", "Masculino"), ("F", "Femenino"), ("O", "Otro"), ("N", "Prefiero no decir")],
         )
-        self.grupo_mano = ChipGroup(
-            on_change=self._notificar,
-            opciones=[("D", "Diestra"), ("I", "Zurda")],
-        )
+        # Mano dominante EXISTIÓ acá (ChipGroup "D"/"I") y se ELIMINÓ a pedido
+        # explícito del tutor: no aporta nada a la Hipótesis H1/H0 de la tesis
+        # (compara respuesta fisiológica ante 2 tipos de estímulo sonoro, no
+        # depende de lateralidad manual) — ver también bd_sqlserver.py (columna
+        # eliminada) y reporte_pdf.py (_MANO_LEGIBLE eliminado).
         self.check_consentimiento = ft.Checkbox(
             label="Consentimiento informado firmado",
             value=False,
@@ -987,9 +998,6 @@ class FormularioParticipante:
             controls=[
                 ft.Row(spacing=Spacing.MD, controls=[self.campo_id, self.campo_edad]),
                 ft.Column(spacing=Spacing.XS, controls=[self._etiqueta_seccion("Género"), self.grupo_genero.build()]),
-                ft.Column(
-                    spacing=Spacing.XS, controls=[self._etiqueta_seccion("Mano dominante"), self.grupo_mano.build()]
-                ),
                 self.check_consentimiento,
                 self.campo_observaciones,
             ],
@@ -1020,8 +1028,6 @@ class FormularioParticipante:
 
         if not self.grupo_genero.value:
             errores.append("Falta seleccionar el género.")
-        if not self.grupo_mano.value:
-            errores.append("Falta seleccionar la mano dominante.")
         if not self.check_consentimiento.value:
             errores.append("Falta marcar el consentimiento informado.")
         return errores
@@ -1030,8 +1036,8 @@ class FormularioParticipante:
         """Valida que el formulario esté completo y listo para registrar.
 
         Returns:
-            bool: True si ID, edad (18-99), género, mano dominante y
-                consentimiento están todos completos/marcados.
+            bool: True si ID, edad (18-99), género y consentimiento están
+                todos completos/marcados.
         """
         return not self.errores()
 
@@ -1039,13 +1045,12 @@ class FormularioParticipante:
         """Extrae los valores del formulario como dict, listo para BaseDatosTesis.registrar_participante().
 
         Returns:
-            dict: id_participante, edad (int), genero, mano_dominante, observaciones, consentimiento (bool).
+            dict: id_participante, edad (int), genero, observaciones, consentimiento (bool).
         """
         return {
             "id_participante": self.campo_id.value.strip(),
             "edad": int(self.campo_edad.value.strip()),
             "genero": self.grupo_genero.value,
-            "mano_dominante": self.grupo_mano.value,
             "observaciones": (self.campo_observaciones.value or "").strip(),
             "consentimiento": bool(self.check_consentimiento.value),
         }

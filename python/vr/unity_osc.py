@@ -26,6 +26,19 @@ CONTRATO OSC (qué debe implementar la escena de Unity del lado receptor):
         /pong             (sin argumentos)  respuesta a /ping — confirma que
                                              la escena está corriendo y con
                                              su receptor OSC activo
+        /sesion/inicio    (sin argumentos)  el participante ya se sentó y se
+                                             confirmó (ver SentarseTrigger.cs +
+                                             SesionStateMachine.cs del lado
+                                             Unity: dispara esto al entrar a
+                                             Estado.SesionActiva, que ya
+                                             incluye sus propios 2s de espera
+                                             de postura + 3s de preparación) —
+                                             ver esperar_confirmacion_sentado().
+                                             OJO: es la dirección opuesta y muy
+                                             parecida a "/sesion/iniciar"
+                                             (Python -> Unity, con "r" al
+                                             final) — no son la misma, cuidado
+                                             al tocar cualquiera de las dos.
 
 Si la escena de Unity no implementa el lado de /ping->/pong, ping() siempre
 va a dar False — no hay forma de distinguir "Unity está corriendo pero no
@@ -130,8 +143,8 @@ class UnityOSC:
         Args:
             nombre_skybox: Nombre del ambiente (ej. "SkyMorning", "SkySunset",
                 "SkyDay", "SkyNight", "SkyEarlyMorning" — ver
-                obtener_protocolo_tesis_final() en sesion_completa.py para el
-                mapeo bloque -> ambiente_vr).
+                obtener_protocolo_sesion_dia() y _AMBIENTE_VR_POR_BLOQUE en
+                sesion_completa.py para el mapeo bloque -> ambiente_vr).
 
         Returns:
             bool: True si el mensaje se pudo enviar.
@@ -209,3 +222,64 @@ class UnityOSC:
                 f"({self.ip}:{self.puerto}) — ¿está la escena corriendo con Play presionado?"
             )
         return respondio.is_set()
+
+    def esperar_confirmacion_sentado(
+        self, cancelar: Optional[threading.Event] = None, intervalo_poll: float = 0.5
+    ) -> bool:
+        """Bloquea hasta que Unity confirme "/sesion/inicio" (el participante ya se
+        sentó, ver CONTRATO OSC en el docstring del módulo) — SIN límite de tiempo
+        por diseño: si Unity nunca manda la señal (el participante tarda, la escena
+        se cerró, etc.), quien llama debe poder cortar la espera a mano con
+        `cancelar` en vez de que esto se corte solo por un timeout arbitrario que
+        interrumpiría una sesión real sin motivo.
+
+        Mismo patrón que ping() (abre un servidor OSC temporal, lo cierra siempre
+        al salir), pero acá el "timeout" del socket se reutiliza como intervalo de
+        sondeo: en vez de esperar UNA vez y devolver, se llama a handle_request()
+        en loop, revisando `cancelar` entre cada intento — así una cancelación
+        tarda como máximo `intervalo_poll` segundos en hacerse efectiva, sin
+        necesitar un hilo aparte ni sockets no bloqueantes.
+
+        Args:
+            cancelar: threading.Event que, si se setea desde afuera (ej. el botón
+                "Cancelar sesión" de la Vista en vivo), corta la espera y hace que
+                esto devuelva False. None (default) espera indefinidamente sin
+                forma de cancelar — pensado para scripts de línea de comandos sin
+                UI, donde Ctrl+C ya cumple ese rol.
+            intervalo_poll: Segundos entre cada revisión de `cancelar` mientras no
+                llega nada de Unity.
+
+        Returns:
+            bool: True si llegó "/sesion/inicio" de Unity. False si se pidió
+                cancelar, o si no se pudo abrir el socket de escucha (puerto
+                ocupado, sin red, etc. — ver logs) — nunca lanza una excepción.
+        """
+        sentado = threading.Event()
+
+        def _al_recibir_confirmacion(direccion: str, *args) -> None:
+            sentado.set()
+
+        disp = osc_dispatcher.Dispatcher()
+        disp.map("/sesion/inicio", _al_recibir_confirmacion)
+
+        try:
+            servidor = osc_server.BlockingOSCUDPServer(("0.0.0.0", self.puerto_escucha), disp, timeout=intervalo_poll)
+        except OSError as error:
+            logger.warning(
+                f"[UnityOSC] No se pudo abrir el puerto de escucha {self.puerto_escucha} "
+                f"para esperar la confirmación de 'sentado': {error}"
+            )
+            return False
+
+        logger.info("[UnityOSC] Esperando confirmación de Unity de que el participante se sentó (sin límite de tiempo)...")
+        try:
+            while not sentado.is_set():
+                if cancelar is not None and cancelar.is_set():
+                    logger.info("[UnityOSC] Espera de 'sentado' cancelada desde afuera.")
+                    return False
+                servidor.handle_request()  # bloquea hasta intervalo_poll, o hasta que llega algo
+        finally:
+            servidor.server_close()
+
+        logger.info("[UnityOSC] Unity confirmó: participante sentado, arrancando protocolo.")
+        return True

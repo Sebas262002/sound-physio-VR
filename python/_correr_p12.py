@@ -1,8 +1,9 @@
-"""Sesión piloto P12 — primera corrida del PROTOCOLO EXPERIMENTAL FINAL de
-la tesis (usar_protocolo_final=True, ver obtener_protocolo_tesis_final()
-en sesion_completa.py): baseline -> solfeggio_528Hz -> descanso ->
-binaural_alpha -> descanso -> isocronico_alpha -> descanso -> preferencia
--> cierre. 450s capturados + 30s estabilización = 480s (8 min) de pared.
+"""Sesión piloto P12 — Día 1 del protocolo experimental final de la tesis
+(dia=1, ver obtener_protocolo_sesion_dia() en sesion_completa.py): baseline
+-> UN estímulo (sorteado para P12 por asignar_estimulos_dia1_dia3()) ->
+cierre. Días 2 (preferencia, requiere preferencia_wav) y 3 (el otro
+estímulo sorteado) se corren por separado, con 24-48h de diferencia, cada
+uno con este mismo script cambiando solo dia=2/dia=3.
 """
 import sys
 from pathlib import Path
@@ -14,7 +15,7 @@ resultado = ejecutar_sesion_completa(
     participante_id="P12",
     usar_sensor_real=True,
     reproducir_audio_real=True,
-    usar_protocolo_final=True,
+    dia=1,
     preferencia_wav=Path("C:/Tesis_Kevin/audio_estimulos/preferencias/mi_cancion.wav"),
     tiempo_estabilizacion_seg=30,
 )

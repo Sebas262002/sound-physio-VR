@@ -71,3 +71,9 @@ desktop.ini
 
 # Git
 .gitignore
+
+# Artefactos de compilación de Unity (IL2CPP/Burst): pesan >1 GB y se regeneran
+# al compilar. Superan el límite de 100 MB por archivo de GitHub.
+unity_projects/TesisVR_BackUpThisFolder_ButDontShipItWithYourGame/
+unity_projects/TesisVR_BurstDebugInformation_DoNotShip/
+unity_projects/.utmp/

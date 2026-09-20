@@ -19,10 +19,10 @@ mapear_bloque_a_prueba() en bd_sqlserver.py).
 
 DATOS DEMOGRÁFICOS FALTANTES:
 Los CSV de sesión solo tienen HR/R-R/condición — nunca hubo un paso que
-capturara edad/género/mano dominante. Ese dato no se puede inventar, así
-que este script registra a los participantes migrados con esos campos en
-NULL y una observación que lo deja explícito, salvo que se completen a
-mano en DEMOGRAFIA_PARTICIPANTES (abajo) antes de correr la migración.
+capturara edad/género. Ese dato no se puede inventar, así que este script
+registra a los participantes migrados con esos campos en NULL y una
+observación que lo deja explícito, salvo que se completen a mano en
+DEMOGRAFIA_PARTICIPANTES (abajo) antes de correr la migración.
 
 SESIONES QUE NO SE PUEDEN EMPAREJAR:
 Si un CSV no tiene su JSON de eventos correspondiente (mismo sufijo de
@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 CARPETA_SESIONES = Path(r"C:\Tesis_Kevin\datos\sesiones")
 
 # Completa acá los datos demográficos REALES de cada participante antes de
-# migrar en serio (ej. "P01": {"edad": 24, "genero": "F", "mano_dominante": "D"}).
+# migrar en serio (ej. "P01": {"edad": 24, "genero": "F"}).
 # Cualquier participante que no aparezca acá se registra con esos campos en
 # NULL — no se inventan valores.
 DEMOGRAFIA_PARTICIPANTES: dict[str, dict] = {}
@@ -118,7 +118,6 @@ def _registrar_participante_si_no_existe(bd: BaseDatosTesis, participante_id: st
         participante_id,
         edad=datos.get("edad"),
         genero=datos.get("genero"),
-        mano_dominante=datos.get("mano_dominante"),
         observaciones=observaciones,
     )
 

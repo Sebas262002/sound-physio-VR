@@ -12,10 +12,12 @@ capturados solo por la app (sin CSV asociado). Consecuencia real de esto:
 la tabla "pruebas" guarda AGREGADOS por bloque (hr_promedio, hr_min, hr_max,
 sdnn, rmssd, ...), no una serie de tiempo continua — el "HR en el tiempo"
 de la Página 2 es, honestamente, "HR promedio por bloque en orden
-cronológico" (baseline + 4 estímulos), no un trazo continuo segundo a
-segundo (eso solo existe en el CSV crudo de la sesión, que este reporte
-deliberadamente no depende). Se documenta acá para que quede claro que es
-una decisión de diseño consciente, no un dato que falta por descuido.
+cronológico" (baseline + estímulo del día, ver PROTOCOLO POR DÍA en
+sesion_completa.py: una sesión real trae UN solo estímulo, no los 4 de
+_ORDEN_ESTIMULO — los otros 3 se muestran como "N/A"), no un trazo continuo
+segundo a segundo (eso solo existe en el CSV crudo de la sesión, que este
+reporte deliberadamente no depende). Se documenta acá para que quede claro
+que es una decisión de diseño consciente, no un dato que falta por descuido.
 
 REUTILIZA, no reinventa:
     - El score de relajación y el ranking salen de
@@ -85,20 +87,29 @@ _PLATA = "#9CA3AF"
 _BRONCE = "#B08D57"
 
 _GENERO_LEGIBLE = {"M": "Masculino", "F": "Femenino", "O": "Otro", "N": "Prefiere no decir"}
-_MANO_LEGIBLE = {"D": "Diestra", "I": "Zurda"}
 
-_ORDEN_ESTIMULO = ["solfeggio", "binaural", "isocronico", "preferencia"]
+# Vocabulario de tipo_estimulo actualizado al protocolo por día (ver
+# PROTOCOLO POR DÍA en sesion_completa.py y _TIPOS_ESTIMULO en bd_sqlserver.py,
+# la fuente de verdad de cómo se etiqueta cada bloque real al guardarse). El
+# reporte JUNTA todas las sesiones (hasta 4 días) del participante (ver
+# generar_reporte_pdf()): el resultado PRIMARIO es la comparación de 2 grupos
+# de la Hipótesis H1/H0 (frecuencias terapéuticas comunes, Días 1+3, vs.
+# sonidos de preferencia personal, Días 2+4 — ver
+# Recomendador.comparar_grupos_terapeutica_vs_preferencia() y
+# _tarjeta_comparacion_grupos_pdf()); el detalle por tipo/sesión
+# (_ORDEN_ESTIMULO, _tabla_ranking_premium, etc.) queda como SECUNDARIO.
+_ORDEN_ESTIMULO = ["solfeggio_isocronico", "binaural", "paisaje", "preferencia"]
 _ETIQUETAS_ESTIMULO = {
-    "solfeggio": "Solfeggio 528Hz",
-    "binaural": "Binaural Alpha",
-    "isocronico": "Isocrónico Alpha",
+    "solfeggio_isocronico": "Solfeggio + Isocrónico 528Hz",
+    "binaural": "Binaural Theta",
+    "paisaje": "Paisaje biofílico",
     "preferencia": "Preferencia personal",
 }
 _COLOR_POR_ESTIMULO = {
     "baseline": Colors.TEXT_SECONDARY,
-    "solfeggio": Colors.PRIMARY,
+    "solfeggio_isocronico": Colors.PRIMARY,
     "binaural": Colors.SECONDARY,
-    "isocronico": Colors.ACCENT,
+    "paisaje": Colors.ACCENT,
     "preferencia": Colors.SUCCESS,
 }
 _PREFERENCIA_LEGIBLE = {
@@ -191,11 +202,23 @@ def _figura_a_buffer(fig) -> BytesIO:
 # ============================================================================
 
 
-def _calcular_ranking(pruebas: list[dict], sesion: dict) -> pd.DataFrame:
+def _calcular_ranking(pruebas: list[dict]) -> pd.DataFrame:
     """Arma el ranking de score_relajacion — MISMO patrón que ya usa
     AppInvestigador._tab_recomendacion() en la app (ver "calcular()" ahí):
-    una fila por tipo_estimulo con hr_media/sdnn/rmssd/respiraciones_min,
-    normalizada contra el baseline de la sesión.
+    una fila por tipo_estimulo con hr_media/sdnn/rmssd/respiraciones_min.
+
+    REDISEÑO (ver PROTOCOLO POR DÍA en sesion_completa.py): antes se normalizaban
+    TODAS las pruebas contra el baseline de UNA sola sesión (diseño viejo: 4
+    estímulos en la misma sesión, mismo baseline real). Ahora cada prueba puede
+    venir de un DÍA (sesión) distinto — así que cada una se normaliza contra SU
+    PROPIO baseline (_hr_baseline/_sdnn_baseline/_rmssd_baseline, inyectados por
+    generar_reporte_pdf() al juntar las sesiones del participante, ver
+    _inyectar_baseline_sesion()), nunca contra el de otro día. Se calcula
+    prueba por prueba (tabla de 1 fila cada vez) y se concatena — mismo
+    resultado que antes cuando todas las pruebas comparten sesión (porque
+    entonces todas tienen el mismo _hr_baseline/etc., es matemáticamente
+    idéntico a normalizar la tabla completa de una — pero además funciona
+    correctamente cuando los baselines difieren entre pruebas.
 
     Returns:
         pd.DataFrame: condicion, hr_media, sdnn, rmssd, respiraciones_min,
@@ -203,31 +226,56 @@ def _calcular_ranking(pruebas: list[dict], sesion: dict) -> pd.DataFrame:
     """
     if not pruebas:
         return pd.DataFrame()
-    tabla = pd.DataFrame(
-        [
-            {
-                "condicion": p["tipo_estimulo"],
-                "hr_media": p.get("hr_promedio"),
-                "sdnn": p.get("sdnn"),
-                "rmssd": p.get("rmssd"),
-                "respiraciones_min": p.get("resp_por_min"),
-            }
-            for p in pruebas
-        ]
+
+    recomendador = Recomendador()
+    resultados = []
+    for p in pruebas:
+        fila = pd.DataFrame(
+            [
+                {
+                    "condicion": p["tipo_estimulo"],
+                    "hr_media": p.get("hr_promedio"),
+                    "sdnn": p.get("sdnn"),
+                    "rmssd": p.get("rmssd"),
+                    "respiraciones_min": p.get("resp_por_min"),
+                }
+            ]
+        )
+        baseline_reposo = {
+            "hr_media": p.get("_hr_baseline"),
+            "sdnn": p.get("_sdnn_baseline"),
+            "rmssd": p.get("_rmssd_baseline"),
+            "respiraciones_min": float("nan"),
+        }
+        resultado_fila = recomendador.calcular_score_relajacion(fila, baseline_reposo)
+        # calcular_score_relajacion() devuelve solo columnas fijas (condicion + métricas
+        # + score) — se re-agrega acá "_id_sesion" para poder volver a la prueba
+        # original sin ambigüedad más abajo. Hace falta desde que Día 2 y Día 4
+        # comparten la misma "condicion" ("preferencia", con una canción distinta cada
+        # una, ver PROTOCOLO POR DÍA en sesion_completa.py) — buscar por "condicion" en
+        # pruebas_por_tipo ya no identifica una sola prueba de forma única.
+        resultado_fila["_id_sesion"] = p.get("_id_sesion")
+        resultados.append(resultado_fila)
+
+    return (
+        pd.concat(resultados, ignore_index=True)
+        .sort_values("score_relajacion", ascending=False)
+        .reset_index(drop=True)
     )
-    baseline_reposo = {
-        "hr_media": sesion.get("hr_baseline"),
-        "sdnn": sesion.get("sdnn_baseline"),
-        "rmssd": sesion.get("rmssd_baseline"),
-        "respiraciones_min": float("nan"),
-    }
-    return Recomendador().calcular_score_relajacion(tabla, baseline_reposo)
 
 
-def _generar_insight(ranking: pd.DataFrame, pruebas_por_tipo: dict, sesion: dict) -> str:
-    """Texto de interpretación automática — ej. "Este participante mostró mayor
+def _generar_insight(
+    ranking: pd.DataFrame,
+    pruebas_por_tipo: dict,
+    prueba_por_sesion: Optional[dict] = None,
+    comparacion_grupos: Optional[dict] = None,
+) -> str:
+    """Texto de interpretación automática. Arranca con el resultado PRIMARIO de la
+    tesis (H1/H0, Anexo 5 página 19): comparación de 2 grupos — frecuencias
+    terapéuticas comunes (Días 1+3) vs. sonidos de preferencia personal (Días 2+4).
+    Sigue con el detalle SECUNDARIO por sesión, ej. "Este participante mostró mayor
     relajación con Solfeggio 528 Hz, con una reducción de 3.5 bpm respecto al
-    baseline. La preferencia subjetiva (5/5) coincidió con la respuesta
+    baseline de ESE día. La preferencia subjetiva (5/5) coincidió con la respuesta
     fisiológica." (formato pedido explícitamente).
 
     "Coincidencia con la preferencia": compara el estímulo con mejor score
@@ -238,36 +286,75 @@ def _generar_insight(ranking: pd.DataFrame, pruebas_por_tipo: dict, sesion: dict
     if ranking.empty or ranking["score_relajacion"].isna().all():
         return (
             "No hay suficientes datos de baseline o de las pruebas para calcular una "
-            "interpretación automática de esta sesión."
+            "interpretación automática de este participante."
         )
 
+    partes = []
+    if comparacion_grupos is not None:
+        terapeuticas = comparacion_grupos.get("terapeuticas")
+        preferencia = comparacion_grupos.get("preferencia")
+        if terapeuticas is not None and preferencia is not None:
+            score_t, score_p = terapeuticas["score_relajacion"], preferencia["score_relajacion"]
+            if score_t > score_p:
+                partes.append(
+                    f"Resultado principal: las frecuencias terapéuticas comunes generaron mayor relajación "
+                    f"(score promedio {score_t:.3f}, n={terapeuticas['n_sesiones']}) que los sonidos de "
+                    f"preferencia personal (score promedio {score_p:.3f}, n={preferencia['n_sesiones']}). "
+                )
+            elif score_p > score_t:
+                partes.append(
+                    f"Resultado principal: los sonidos de preferencia personal generaron mayor relajación "
+                    f"(score promedio {score_p:.3f}, n={preferencia['n_sesiones']}) que las frecuencias "
+                    f"terapéuticas comunes (score promedio {score_t:.3f}, n={terapeuticas['n_sesiones']}). "
+                )
+            else:
+                partes.append(
+                    f"Resultado principal: ambos grupos generaron una relajación equivalente "
+                    f"(score promedio {score_t:.3f} en ambos). "
+                )
+        else:
+            faltante = "terapéuticas (Días 1/3)" if terapeuticas is None else "de preferencia (Días 2/4)"
+            partes.append(
+                f"Resultado principal: todavía no hay sesiones {faltante} registradas — la comparación de "
+                "2 grupos de la tesis necesita al menos una sesión de cada tipo. "
+            )
+
     mejor = ranking.iloc[0]
-    hr_baseline = sesion.get("hr_baseline")
+    # El baseline del mejor estímulo es el de SU PROPIO día (ver _calcular_ranking) —
+    # se busca la prueba original por _id_sesion (no por "condicion": Día 2 y Día 4
+    # comparten la misma "condicion" = "preferencia", ver _calcular_ranking).
+    lookup = prueba_por_sesion if prueba_por_sesion is not None else pruebas_por_tipo
+    clave_mejor = mejor.get("_id_sesion") if prueba_por_sesion is not None else mejor["condicion"]
+    prueba_mejor = lookup.get(clave_mejor)
+    hr_baseline = prueba_mejor.get("_hr_baseline") if prueba_mejor is not None else None
     delta_hr = (mejor["hr_media"] - hr_baseline) if hr_baseline is not None and pd.notna(mejor["hr_media"]) else None
     etiqueta_mejor = _ETIQUETAS_ESTIMULO.get(mejor["condicion"], mejor["condicion"])
 
-    partes = [f"Este participante mostró mayor relajación con {etiqueta_mejor}"]
+    partes.append(f"Detalle por sesión: este participante mostró mayor relajación con {etiqueta_mejor}")
     if delta_hr is not None:
         direccion = "una reducción" if delta_hr < 0 else "un aumento"
         partes.append(f", con {direccion} de {abs(delta_hr):.1f} bpm respecto al baseline")
     partes.append(".")
 
-    prueba_mejor = pruebas_por_tipo.get(mejor["condicion"])
     if prueba_mejor is not None and prueba_mejor.get("likert_relajacion") is not None:
+        candidatos_likert = prueba_por_sesion if prueba_por_sesion is not None else pruebas_por_tipo
         likerts = {
-            tipo: p.get("likert_relajacion") for tipo, p in pruebas_por_tipo.items() if p.get("likert_relajacion") is not None
+            clave: p.get("likert_relajacion") for clave, p in candidatos_likert.items() if p.get("likert_relajacion") is not None
         }
         if likerts:
             mas_valorado = max(likerts, key=likerts.get)
-            if mas_valorado == mejor["condicion"]:
+            if mas_valorado == clave_mejor:
                 partes.append(
                     f" La autoevaluación de relajación ({prueba_mejor['likert_relajacion']}/5) coincidió con la "
                     "respuesta fisiológica: el mismo estímulo fue el mejor calificado y el de mejor score."
                 )
             else:
+                etiqueta_mas_valorado = _ETIQUETAS_ESTIMULO.get(
+                    candidatos_likert[mas_valorado].get("tipo_estimulo", mas_valorado), mas_valorado
+                )
                 partes.append(
                     f" La autoevaluación de relajación más alta fue para "
-                    f"{_ETIQUETAS_ESTIMULO.get(mas_valorado, mas_valorado)} "
+                    f"{etiqueta_mas_valorado} "
                     f"({likerts[mas_valorado]}/5), lo que no coincide exactamente con la respuesta fisiológica — "
                     "una posible disociación entre percepción subjetiva y activación autonómica."
                 )
@@ -296,43 +383,57 @@ def _score_global_0_100(ranking: pd.DataFrame) -> Optional[int]:
 # ============================================================================
 
 
-def _grafico_hr_bloques(sesion: dict, pruebas_por_tipo: dict) -> BytesIO:
-    """Página 2 — barras de HR en orden cronológico: baseline + los 4 estímulos
-    (ver docstring del módulo: SQL Server no guarda una serie de tiempo
-    continua, solo agregados por bloque)."""
+def _grafico_hr_bloques(pruebas_por_tipo: dict) -> BytesIO:
+    """Página 2 — barras de HR agrupadas por condición: baseline DE ESE DÍA junto
+    al estímulo de ese mismo día. REDISEÑO (ver PROTOCOLO POR DÍA en
+    sesion_completa.py): antes había UNA barra "Baseline" compartida (una sola
+    sesión con 4 estímulos, mismo baseline real para los 4). Ahora cada
+    condición viene de un día distinto con SU PROPIO baseline — mostrar un
+    único baseline compartido sería directamente incorrecto (mezclaría el
+    reposo de un día con el estímulo de otro). Por eso cada condición trae su
+    propio par de barras (baseline ese día / estímulo ese día) en vez de una
+    barra de baseline única al principio."""
     import matplotlib.pyplot as plt
 
     _estilo_matplotlib()
 
-    etiquetas = ["Baseline"] + [_ETIQUETAS_ESTIMULO[t] for t in _ORDEN_ESTIMULO]
-    valores = [sesion.get("hr_baseline")]
-    colores = [_COLOR_POR_ESTIMULO["baseline"]]
+    etiquetas, baseline_vals, estimulo_vals, colores = [], [], [], []
     for tipo in _ORDEN_ESTIMULO:
         prueba = pruebas_por_tipo.get(tipo)
-        valores.append(prueba.get("hr_promedio") if prueba else None)
+        if prueba is None or prueba.get("hr_promedio") is None:
+            continue
+        etiquetas.append(_ETIQUETAS_ESTIMULO[tipo])
+        baseline_vals.append(prueba.get("_hr_baseline"))
+        estimulo_vals.append(prueba["hr_promedio"])
         colores.append(_COLOR_POR_ESTIMULO[tipo])
 
-    etiquetas_validas = [e for e, v in zip(etiquetas, valores) if v is not None]
-    valores_validos = [v for v in valores if v is not None]
-    colores_validos = [c for c, v in zip(colores, valores) if v is not None]
-
     fig, ax = plt.subplots(figsize=(11, 4.6))
-    if not valores_validos:
-        ax.text(0.5, 0.5, "Sin datos de HR disponibles para esta sesión.", ha="center", va="center", fontsize=11, color=Colors.TEXT_SECONDARY)
+    if not etiquetas:
+        ax.text(0.5, 0.5, "Sin datos de HR disponibles para este participante.", ha="center", va="center", fontsize=11, color=Colors.TEXT_SECONDARY)
         ax.axis("off")
         return _figura_a_buffer(fig)
 
-    y_min, y_max = _limites_eje_y(valores_validos)
-    barras = ax.bar(etiquetas_validas, valores_validos, color=colores_validos, width=0.6, zorder=3)
+    todos_los_valores = [v for v in baseline_vals + estimulo_vals if v is not None]
+    y_min, y_max = _limites_eje_y(todos_los_valores)
+
+    x = np.arange(len(etiquetas))
+    ancho = 0.32
+    baseline_plot = [v if v is not None else 0 for v in baseline_vals]
+    barras_baseline = ax.bar(
+        x - ancho / 2, baseline_plot, ancho, color=Colors.TEXT_SECONDARY, alpha=0.5, zorder=3, label="Baseline (ese día)"
+    )
+    barras_estimulo = ax.bar(x + ancho / 2, estimulo_vals, ancho, color=colores, zorder=3, label="Estímulo")
     ax.set_ylim(y_min, y_max)
-    for barra, valor in zip(barras, valores_validos):
+    for barra, valor in zip(barras_baseline, baseline_vals):
+        if valor is not None:
+            ax.text(barra.get_x() + barra.get_width() / 2, valor + (y_max - y_min) * 0.02, f"{valor:.1f}", ha="center", fontsize=8, color=Colors.TEXT_SECONDARY)
+    for barra, valor in zip(barras_estimulo, estimulo_vals):
         ax.text(barra.get_x() + barra.get_width() / 2, valor + (y_max - y_min) * 0.02, f"{valor:.1f}", ha="center", fontsize=9, color=Colors.TEXT_PRIMARY, fontweight="bold")
 
-    if sesion.get("hr_baseline") is not None:
-        ax.axhline(sesion["hr_baseline"], color=Colors.TEXT_SECONDARY, linestyle="--", linewidth=1, alpha=0.6, zorder=2, label="Baseline")
-        ax.legend(loc="upper right", frameon=False, fontsize=8)
-
-    ax.set_title("Frecuencia cardíaca por bloque (orden cronológico)", loc="left", fontsize=12, fontweight="bold", color=Colors.TEXT_PRIMARY, pad=12)
+    ax.set_xticks(x)
+    ax.set_xticklabels(etiquetas)
+    ax.legend(loc="upper right", frameon=False, fontsize=8)
+    ax.set_title("Frecuencia cardíaca por condición — baseline propio de cada día", loc="left", fontsize=12, fontweight="bold", color=Colors.TEXT_PRIMARY, pad=12)
     ax.set_ylabel("HR (bpm)")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -340,40 +441,45 @@ def _grafico_hr_bloques(sesion: dict, pruebas_por_tipo: dict) -> BytesIO:
     return _figura_a_buffer(fig)
 
 
-def _grafico_comparacion_hr(sesion: dict, pruebas_por_tipo: dict) -> BytesIO:
-    """Página 3, gráfico izquierdo — HR por estímulo (sin la barra de baseline,
-    solo la línea de referencia), etiquetas con valor exacto, eje Y adaptativo."""
+def _grafico_comparacion_hr(pruebas_por_tipo: dict) -> BytesIO:
+    """Página 3, gráfico izquierdo — ΔHR (estímulo - baseline de SU PROPIO día)
+    por condición. REDISEÑO: antes mostraba HR absoluto + una línea de
+    referencia de UN baseline compartido — ya no hay un solo baseline que
+    referenciar (cada condición es de un día distinto), así que se grafica
+    directamente la diferencia contra el baseline de ese día, que es lo que
+    realmente importa comparar entre condiciones de días distintos. Barras
+    negativas (HR bajó vs. su propio reposo) son la lectura "más relajado"."""
     import matplotlib.pyplot as plt
 
     _estilo_matplotlib()
 
-    etiquetas, valores, colores = [], [], []
+    etiquetas, deltas, colores = [], [], []
     for tipo in _ORDEN_ESTIMULO:
         prueba = pruebas_por_tipo.get(tipo)
-        if prueba is None or prueba.get("hr_promedio") is None:
+        if prueba is None or prueba.get("hr_promedio") is None or prueba.get("_hr_baseline") is None:
             continue
         etiquetas.append(_ETIQUETAS_ESTIMULO[tipo])
-        valores.append(prueba["hr_promedio"])
+        deltas.append(prueba["hr_promedio"] - prueba["_hr_baseline"])
         colores.append(_COLOR_POR_ESTIMULO[tipo])
 
     fig, ax = plt.subplots(figsize=(8, 5.5))
-    if not valores:
-        ax.text(0.5, 0.5, "Sin datos de HR por estímulo.", ha="center", va="center", color=Colors.TEXT_SECONDARY)
+    if not deltas:
+        ax.text(0.5, 0.5, "Sin datos de HR/baseline por estímulo.", ha="center", va="center", color=Colors.TEXT_SECONDARY)
         ax.axis("off")
         return _figura_a_buffer(fig)
 
-    y_min, y_max = _limites_eje_y(valores)
-    barras = ax.bar(etiquetas, valores, color=colores, width=0.55, zorder=3)
+    y_min, y_max = _limites_eje_y(deltas, piso_minimo=min(deltas) - 1)
+    barras = ax.bar(etiquetas, deltas, color=colores, width=0.55, zorder=3)
     ax.set_ylim(y_min, y_max)
-    for barra, valor in zip(barras, valores):
-        ax.text(barra.get_x() + barra.get_width() / 2, valor + (y_max - y_min) * 0.02, f"{valor:.1f}", ha="center", fontsize=9, fontweight="bold")
+    for barra, valor in zip(barras, deltas):
+        offset = (y_max - y_min) * 0.02 if valor >= 0 else -(y_max - y_min) * 0.05
+        ax.text(barra.get_x() + barra.get_width() / 2, valor + offset, f"{valor:+.1f}", ha="center", fontsize=9, fontweight="bold")
 
-    if sesion.get("hr_baseline") is not None:
-        ax.axhline(sesion["hr_baseline"], color=Colors.TEXT_SECONDARY, linestyle="--", linewidth=1, alpha=0.7, zorder=2, label=f"Baseline ({sesion['hr_baseline']:.1f})")
-        ax.legend(loc="upper right", frameon=False, fontsize=8)
+    ax.axhline(0, color=Colors.TEXT_SECONDARY, linestyle="--", linewidth=1, alpha=0.7, zorder=2, label="Su propio baseline (0)")
+    ax.legend(loc="upper right", frameon=False, fontsize=8)
 
-    ax.set_title("HR promedio por estímulo", loc="left", fontsize=12, fontweight="bold", pad=12)
-    ax.set_ylabel("HR (bpm)")
+    ax.set_title("ΔHR vs. baseline de cada día", loc="left", fontsize=12, fontweight="bold", pad=12)
+    ax.set_ylabel("ΔHR (bpm) — negativo = más relajado")
     ax.tick_params(axis="x", rotation=15)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -558,10 +664,21 @@ def _tarjeta_dato(etiqueta: str, valor: str, estilos: _Estilos) -> Table:
     return contenido
 
 
-def _grilla_participante(participante: dict, sesion: dict, n_sesiones: int, estilos: _Estilos) -> Table:
+def _grilla_participante(participante: dict, sesiones_con_pruebas: list, estilos: _Estilos) -> Table:
+    """REDISEÑO: antes mostraba la duración de UNA sesión (la más reciente). Ahora
+    el reporte junta varias sesiones (días) del participante, así que "duración"
+    de una sola ya no describe el conjunto — se reemplaza por el RANGO de fechas
+    entre la primera y la última sesión incluida (ver PROTOCOLO POR DÍA en
+    sesion_completa.py: normalmente 2-3 sesiones, separadas 24-48h entre sí)."""
     fecha_registro = participante["fecha_registro"].strftime("%d/%m/%Y") if participante.get("fecha_registro") else "—"
-    duracion = sesion.get("duracion_seg")
-    duracion_texto = f"{duracion // 60}m {duracion % 60}s" if duracion else "—"
+    n_sesiones = len(sesiones_con_pruebas)
+    fechas = [s.get("fecha_hora") for s, _ in sesiones_con_pruebas if s.get("fecha_hora")]
+    if len(fechas) >= 2:
+        rango_texto = f"{min(fechas).strftime('%d/%m')} – {max(fechas).strftime('%d/%m/%Y')}"
+    elif len(fechas) == 1:
+        rango_texto = fechas[0].strftime("%d/%m/%Y")
+    else:
+        rango_texto = "—"
 
     celdas = [
         [
@@ -569,8 +686,8 @@ def _grilla_participante(participante: dict, sesion: dict, n_sesiones: int, esti
             _tarjeta_dato("Edad / Género", f"{participante.get('edad', '—')} años &nbsp;&nbsp;<font size=9 color='{Colors.TEXT_SECONDARY}'>{_GENERO_LEGIBLE.get(participante.get('genero'), '—')}</font>", estilos),
         ],
         [
-            _tarjeta_dato("Mano dominante / N° sesiones", f"{_MANO_LEGIBLE.get(participante.get('mano_dominante'), '—')} &nbsp;&nbsp;<font size=9 color='{Colors.TEXT_SECONDARY}'>{n_sesiones} sesión(es)</font>", estilos),
-            _tarjeta_dato("Duración / Fecha del reporte", f"{duracion_texto} &nbsp;&nbsp;<font size=9 color='{Colors.TEXT_SECONDARY}'>{datetime.now().strftime('%d/%m/%Y')}</font>", estilos),
+            _tarjeta_dato("N° de sesiones", f"{n_sesiones} sesión(es)", estilos),
+            _tarjeta_dato("Rango de días / Fecha del reporte", f"{rango_texto} &nbsp;&nbsp;<font size=9 color='{Colors.TEXT_SECONDARY}'>{datetime.now().strftime('%d/%m/%Y')}</font>", estilos),
         ],
     ]
     tabla = Table(celdas, colWidths=[8.5 * cm, 8.5 * cm])
@@ -578,9 +695,86 @@ def _grilla_participante(participante: dict, sesion: dict, n_sesiones: int, esti
     return tabla
 
 
-def _resumen_ejecutivo(ranking: pd.DataFrame, sesion: dict, pruebas_por_tipo: dict, estilos: _Estilos) -> Table:
-    """Card destacada de la portada: estímulo más efectivo, ΔHR, mayor preferencia,
-    score global 0-100."""
+def _tarjeta_comparacion_grupos_pdf(comparacion_grupos: dict, estilos: _Estilos) -> Table:
+    """Card PRIMARIA (Página 1, antes que _resumen_ejecutivo): el resultado central
+    de la tesis (H1/H0, Anexo 5 página 19) — frecuencias terapéuticas comunes
+    (Días 1+3 promediados) vs. sonidos de preferencia personal (Días 2+4
+    promediados). Ver Recomendador.comparar_grupos_terapeutica_vs_preferencia()."""
+    terapeuticas = comparacion_grupos.get("terapeuticas")
+    preferencia = comparacion_grupos.get("preferencia")
+
+    if terapeuticas is None or preferencia is None:
+        faltante = "terapéuticas (Días 1/3)" if terapeuticas is None else "de preferencia (Días 2/4)"
+        contenido = [
+            [Paragraph("RESULTADO PRINCIPAL — H1/H0 (Anexo 5)", estilos.etiqueta)],
+            [Paragraph(
+                f"Todavía no hay sesiones {faltante} registradas — la comparación de 2 grupos necesita al "
+                "menos una sesión de cada tipo.",
+                estilos.cuerpo,
+            )],
+        ]
+        tabla = Table(contenido, colWidths=[17 * cm])
+        tabla.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(Colors.BG_MAIN)),
+                    ("BOX", (0, 0), (-1, -1), 1, rl_colors.HexColor(Colors.WARNING)),
+                    ("TOPPADDING", (0, 0), (-1, -1), 12),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 14),
+                ]
+            )
+        )
+        return tabla
+
+    score_t, score_p = terapeuticas["score_relajacion"], preferencia["score_relajacion"]
+    if score_t > score_p:
+        texto_ganador, fila_ganadora = "Frecuencias terapéuticas comunes generaron mayor relajación", 0
+    elif score_p > score_t:
+        texto_ganador, fila_ganadora = "Sonidos de preferencia personal generaron mayor relajación", 1
+    else:
+        texto_ganador, fila_ganadora = "Ambos grupos generaron relajación equivalente", None
+
+    filas = [
+        [Paragraph("RESULTADO PRINCIPAL — H1/H0 (Anexo 5)", estilos.etiqueta), ""],
+        [Paragraph(f"<b>{texto_ganador}</b>", estilos.cuerpo), ""],
+        [
+            Paragraph(
+                f"<b>Frecuencias terapéuticas (Días 1+3):</b> score {score_t:.3f}, "
+                f"n={terapeuticas['n_sesiones']} sesión(es) — HR {terapeuticas['hr_media']:.1f}, "
+                f"SDNN {terapeuticas['sdnn']:.2f}, RMSSD {terapeuticas['rmssd']:.2f}",
+                estilos.cuerpo,
+            ),
+            Paragraph(
+                f"<b>Preferencia personal (Días 2+4):</b> score {score_p:.3f}, "
+                f"n={preferencia['n_sesiones']} sesión(es) — HR {preferencia['hr_media']:.1f}, "
+                f"SDNN {preferencia['sdnn']:.2f}, RMSSD {preferencia['rmssd']:.2f}",
+                estilos.cuerpo,
+            ),
+        ],
+    ]
+    tabla = Table(filas, colWidths=[8.5 * cm, 8.5 * cm])
+    comandos = [
+        ("SPAN", (0, 0), (1, 0)),
+        ("SPAN", (0, 1), (1, 1)),
+        ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(Colors.BG_MAIN)),
+        ("BOX", (0, 0), (-1, -1), 1.5, rl_colors.HexColor(Colors.PRIMARY)),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]
+    if fila_ganadora is not None:
+        comandos.append(("BACKGROUND", (fila_ganadora, 2), (fila_ganadora, 2), rl_colors.HexColor(Colors.SUCCESS).clone(alpha=0.12)))
+    tabla.setStyle(TableStyle(comandos))
+    return tabla
+
+
+def _resumen_ejecutivo(ranking: pd.DataFrame, pruebas_por_tipo: dict, estilos: _Estilos, prueba_por_sesion: Optional[dict] = None) -> Table:
+    """Card SECUNDARIA de la portada (detalle por sesión): estímulo más efectivo,
+    ΔHR, mayor preferencia, score global 0-100. El resultado PRIMARIO (comparación
+    de 2 grupos, H1/H0) se arma aparte en _tarjeta_comparacion_grupos_pdf() y va
+    ANTES que esta card en la Página 1."""
     if ranking.empty or ranking["score_relajacion"].isna().all():
         contenido = [[Paragraph("RESUMEN EJECUTIVO", estilos.etiqueta)], [Paragraph("No hay suficientes datos para un resumen (faltan baseline o pruebas).", estilos.cuerpo)]]
         tabla = Table(contenido, colWidths=[17 * cm])
@@ -599,7 +793,13 @@ def _resumen_ejecutivo(ranking: pd.DataFrame, sesion: dict, pruebas_por_tipo: di
 
     mejor = ranking.iloc[0]
     etiqueta_mejor = _ETIQUETAS_ESTIMULO.get(mejor["condicion"], mejor["condicion"])
-    hr_baseline = sesion.get("hr_baseline")
+    # Baseline DE ESE DÍA (no uno de sesión compartido, ver _calcular_ranking). Se
+    # busca por _id_sesion (no por "condicion"): Día 2 y Día 4 comparten la misma
+    # "condicion" = "preferencia", ver _calcular_ranking.
+    lookup = prueba_por_sesion if prueba_por_sesion is not None else pruebas_por_tipo
+    clave_mejor = mejor.get("_id_sesion") if prueba_por_sesion is not None else mejor["condicion"]
+    prueba_mejor = lookup.get(clave_mejor)
+    hr_baseline = prueba_mejor.get("_hr_baseline") if prueba_mejor is not None else None
     delta_hr = (mejor["hr_media"] - hr_baseline) if hr_baseline is not None and pd.notna(mejor["hr_media"]) else None
     # La etiqueta cambia según el signo real: mostrar siempre "Reducción" aunque el HR
     # haya SUBIDO es engañoso (bug real visto probando con P013: el mejor score fue por
@@ -676,35 +876,27 @@ def _estilo_tabla_premium(encabezados_desde_fila: int = 1) -> TableStyle:
     )
 
 
-def _tabla_metricas_bloque(sesion: dict, pruebas_por_tipo: dict, ranking: pd.DataFrame) -> Table:
-    """Página 2 — tabla limpia por bloque, con ΔHR vs baseline."""
-    hr_baseline = sesion.get("hr_baseline")
-    encabezados = ["Bloque", "Duración", "HR prom.", "ΔHR vs baseline", "SDNN", "RMSSD", "Preferencia"]
+def _tabla_metricas_bloque(pruebas_por_tipo: dict, ranking: pd.DataFrame) -> Table:
+    """Página 2 — tabla limpia por condición, con el baseline de SU PROPIO día
+    como columna (ya no como una fila "Baseline" única al principio — cada
+    condición puede venir de un día distinto, ver PROTOCOLO POR DÍA en
+    sesion_completa.py, así que cada una necesita mostrar su propio baseline)."""
+    encabezados = ["Estímulo", "Duración", "Baseline", "HR prom.", "ΔHR vs baseline", "SDNN", "RMSSD", "Preferencia"]
     filas = [encabezados]
 
-    duracion_sesion = sesion.get("duracion_seg")
-    filas.append(
-        [
-            "Baseline",
-            f"{duracion_sesion}s" if duracion_sesion else "—",
-            f"{hr_baseline:.1f}" if hr_baseline is not None else "—",
-            "—",
-            f"{sesion.get('sdnn_baseline'):.1f}" if sesion.get("sdnn_baseline") is not None else "—",
-            f"{sesion.get('rmssd_baseline'):.1f}" if sesion.get("rmssd_baseline") is not None else "—",
-            "—",
-        ]
-    )
     for tipo in _ORDEN_ESTIMULO:
         prueba = pruebas_por_tipo.get(tipo)
         if prueba is None:
-            filas.append([_ETIQUETAS_ESTIMULO[tipo], "N/A", "N/A", "N/A", "N/A", "N/A", "N/A"])
+            filas.append([_ETIQUETAS_ESTIMULO[tipo], "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A"])
             continue
+        hr_baseline = prueba.get("_hr_baseline")
         hr_prom = prueba.get("hr_promedio")
         delta = (hr_prom - hr_baseline) if hr_prom is not None and hr_baseline is not None else None
         filas.append(
             [
                 _ETIQUETAS_ESTIMULO[tipo],
                 f"{prueba.get('duracion_seg', '—')}s",
+                f"{hr_baseline:.1f}" if hr_baseline is not None else "N/A",
                 f"{hr_prom:.1f}" if hr_prom is not None else "N/A",
                 f"{delta:+.1f}" if delta is not None else "N/A",
                 f"{prueba.get('sdnn'):.1f}" if prueba.get("sdnn") is not None else "N/A",
@@ -713,35 +905,51 @@ def _tabla_metricas_bloque(sesion: dict, pruebas_por_tipo: dict, ranking: pd.Dat
             ]
         )
 
-    tabla = Table(filas, colWidths=[3.6 * cm, 2.4 * cm, 2.4 * cm, 3.2 * cm, 2.4 * cm, 2.4 * cm, 3.2 * cm], repeatRows=1)
+    tabla = Table(filas, colWidths=[4.4 * cm, 1.6 * cm, 1.7 * cm, 1.6 * cm, 2.9 * cm, 1.6 * cm, 1.6 * cm, 2.6 * cm], repeatRows=1)
     tabla.setStyle(_estilo_tabla_premium())
     return tabla
 
 
-def _tabla_ranking_premium(ranking: pd.DataFrame, sesion: dict, estilos: _Estilos) -> Table:
-    """Página 3 — ranking de score_relajacion con badges de texto (ver docstring
-    del módulo: emoji de medalla NO renderiza en Helvetica, así que se usan
-    badges de texto con fondo de color en vez de 🥇🥈🥉)."""
+def _tabla_ranking_premium(ranking: pd.DataFrame, pruebas_por_tipo: dict, estilos: _Estilos, prueba_por_sesion: Optional[dict] = None) -> Table:
+    """Página 3, detalle SECUNDARIO por sesión — ranking de score_relajacion con
+    badges de texto (ver docstring del módulo: emoji de medalla NO renderiza en
+    Helvetica, así que se usan badges de texto con fondo de color en vez de
+    🥇🥈🥉). El % de mejora se calcula contra el baseline DE CADA CONDICIÓN (su
+    propio día), no uno compartido — ver _calcular_ranking(). El resultado
+    PRIMARIO de la tesis (2 grupos, H1/H0) se muestra aparte, arriba de esta
+    tabla — ver _tarjeta_comparacion_grupos_pdf()."""
     if ranking.empty:
         return Table([[Paragraph("Sin datos suficientes para un ranking.", estilos.cuerpo)]])
 
-    hr_baseline = sesion.get("hr_baseline")
     colores_puesto = [_ORO, _PLATA, _BRONCE]
     etiquetas_puesto = ["1º LUGAR", "2º LUGAR", "3º LUGAR"]
 
-    filas = [["Puesto", "Estímulo", "Score relajación", "% mejora HR vs baseline"]]
+    filas = [["Puesto", "Estímulo", "Score relajación", "% mejora HR vs su baseline"]]
     estilo_filas_color = []
     for i, (_, fila) in enumerate(ranking.iterrows()):
         if pd.isna(fila["score_relajacion"]):
             continue
         etiqueta_puesto = etiquetas_puesto[i] if i < 3 else f"{i + 1}º"
+        # Por _id_sesion, no por "condicion": Día 2 y Día 4 comparten "preferencia"
+        # (ver _calcular_ranking) — buscar por condicion sería ambiguo entre ambos.
+        lookup = prueba_por_sesion if prueba_por_sesion is not None else pruebas_por_tipo
+        clave = fila.get("_id_sesion") if prueba_por_sesion is not None else fila["condicion"]
+        prueba = lookup.get(clave)
+        hr_baseline = prueba.get("_hr_baseline") if prueba is not None else None
         mejora_pct = None
         if hr_baseline and pd.notna(fila["hr_media"]) and hr_baseline != 0:
             mejora_pct = (hr_baseline - fila["hr_media"]) / hr_baseline * 100
+        etiqueta_estimulo = _ETIQUETAS_ESTIMULO.get(fila["condicion"], fila["condicion"])
+        # Desambigua las 2 sesiones de preferencia (Día 2 / Día 4, canción distinta
+        # cada una) con su fecha — si no, ambas filas dirían lo mismo ("Preferencia
+        # personal") sin forma de distinguirlas en esta tabla por-sesión.
+        fecha_prueba = prueba.get("_fecha_sesion") if prueba is not None else None
+        if fila["condicion"] == "preferencia" and fecha_prueba is not None:
+            etiqueta_estimulo = f"{etiqueta_estimulo} ({fecha_prueba.strftime('%d/%m/%Y')})"
         filas.append(
             [
                 etiqueta_puesto,
-                _ETIQUETAS_ESTIMULO.get(fila["condicion"], fila["condicion"]),
+                etiqueta_estimulo,
                 f"{fila['score_relajacion']:.3f}",
                 f"{mejora_pct:+.1f}%" if mejora_pct is not None else "N/A",
             ]
@@ -782,13 +990,17 @@ def _tabla_comentarios(pruebas_por_tipo: dict, estilos: _Estilos) -> Table:
     return tabla
 
 
-def _correlacion_preferencia_metricas(ranking: pd.DataFrame, pruebas_por_tipo: dict) -> str:
+def _correlacion_preferencia_metricas(ranking: pd.DataFrame, pruebas_por_tipo: dict, prueba_por_sesion: Optional[dict] = None) -> str:
     """Pearson simple entre preferencia numérica (1-4) y score_relajacion — con
-    n=4 puntos como mucho, es más una nota descriptiva que un test estadístico
-    riguroso, se presenta como tal."""
+    hasta n=4 puntos (protocolo de 4 días), es más una nota descriptiva que un
+    test estadístico riguroso, se presenta como tal."""
     pares = []
+    lookup = prueba_por_sesion if prueba_por_sesion is not None else pruebas_por_tipo
     for _, fila in ranking.iterrows():
-        prueba = pruebas_por_tipo.get(fila["condicion"])
+        # Por _id_sesion, no por "condicion": Día 2 y Día 4 comparten "preferencia"
+        # (ver _calcular_ranking) — por condicion se perdería uno de los 2 puntos.
+        clave = fila.get("_id_sesion") if prueba_por_sesion is not None else fila["condicion"]
+        prueba = lookup.get(clave)
         if prueba is None or pd.isna(fila["score_relajacion"]):
             continue
         pref_num = _PREFERENCIA_NUMERICA.get(prueba.get("preferencia"))
@@ -851,19 +1063,53 @@ def generar_reporte_pdf(
     if participante is None:
         raise ValueError(f"El participante {id_participante} no existe en la base de datos.")
 
+    # REDISEÑO (ver PROTOCOLO POR DÍA en sesion_completa.py): antes se reportaba
+    # SOLO la sesión más reciente (diseño viejo: una sesión con hasta 4
+    # estímulos ya traía todo lo necesario). Ahora cada sesión trae UN solo
+    # estímulo — reportar solo la última dejaría afuera los otros días del
+    # mismo participante, que es justo la comparación que le interesa a la
+    # tesis. Se juntan TODAS las sesiones con pruebas, y cada prueba se marca
+    # con el baseline de SU PROPIA sesión (nunca uno compartido — ver
+    # _calcular_ranking) para poder normalizarla correctamente más adelante.
     sesiones = bd.obtener_sesiones_participante(id_participante)
     sesiones_con_pruebas = [(s, bd.obtener_pruebas_sesion(s["id_sesion"])) for s in sesiones]
     sesiones_con_pruebas = [(s, p) for s, p in sesiones_con_pruebas if p]
     if not sesiones_con_pruebas:
         raise ValueError(f"{id_participante} no tiene ninguna sesión con pruebas registradas; no hay nada que reportar.")
 
-    # La más reciente con pruebas — reportar todo el historial haría que el
-    # largo del PDF creciera sin límite con cada sesión nueva; obtener_sesiones_participante()
-    # ya viene ordenado por fecha_hora DESC (ver bd_sqlserver.py).
-    sesion, pruebas = sesiones_con_pruebas[0]
-    pruebas_por_tipo = {p["tipo_estimulo"]: p for p in pruebas}
+    # pruebas_por_tipo: un dict por tipo_estimulo, usado para las tablas/gráficos
+    # SECUNDARIOS "por condición" (Página 2 y 4, ver _ORDEN_ESTIMULO) — bajo el
+    # protocolo por día, Día 2 y Día 4 comparten el mismo tipo_estimulo
+    # ("preferencia", con una canción distinta cada uno, ver PROTOCOLO POR DÍA en
+    # sesion_completa.py), así que ahí gana la sesión más nueva (ver key=... en
+    # sorted) — una simplificación aceptable para una tabla "por tipo".
+    #
+    # prueba_por_sesion / pruebas_todas: SIN deduplicar por tipo — necesarios para
+    # el ranking y el resultado PRIMARIO (2 grupos, H1/H0): si se usara solo
+    # pruebas_por_tipo, una de las 2 sesiones de preferencia (Día 2 o Día 4)
+    # quedaría totalmente afuera del score y del promedio del grupo, no solo de
+    # estas tablas secundarias.
+    pruebas_por_tipo: dict = {}
+    prueba_por_sesion: dict = {}
+    pruebas_todas: list = []
+    for sesion_dia, pruebas_dia in sorted(sesiones_con_pruebas, key=lambda t: t[0].get("fecha_hora") or datetime.min):
+        for p in pruebas_dia:
+            p = dict(p)  # copia: no mutar la fila que devolvió bd.obtener_pruebas_sesion()
+            p["_hr_baseline"] = sesion_dia.get("hr_baseline")
+            p["_sdnn_baseline"] = sesion_dia.get("sdnn_baseline")
+            p["_rmssd_baseline"] = sesion_dia.get("rmssd_baseline")
+            p["_id_sesion"] = sesion_dia.get("id_sesion")
+            p["_fecha_sesion"] = sesion_dia.get("fecha_hora")
+            pruebas_por_tipo[p["tipo_estimulo"]] = p
+            prueba_por_sesion[p["_id_sesion"]] = p
+            pruebas_todas.append(p)
+    pruebas = pruebas_todas
 
-    ranking = _calcular_ranking(pruebas, sesion)
+    ranking = _calcular_ranking(pruebas)
+    # Resultado PRIMARIO de la tesis (H1/H0, Anexo 5 página 19): 2 grupos
+    # pooleados — terapéuticas (Días 1+3) vs. preferencia (Días 2+4) — ver
+    # Recomendador.comparar_grupos_terapeutica_vs_preferencia().
+    comparacion_grupos = Recomendador().comparar_grupos_terapeutica_vs_preferencia(ranking)
 
     carpeta_salida.mkdir(parents=True, exist_ok=True)
     ruta = carpeta_salida / f"{id_participante}_reporte_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
@@ -874,23 +1120,32 @@ def generar_reporte_pdf(
     # ---------- PÁGINA 1: PORTADA EJECUTIVA ----------
     elementos.append(_banner_titulo(estilos, ruta_logo))
     elementos.append(Spacer(1, 0.5 * cm))
-    elementos.append(_grilla_participante(participante, sesion, len(sesiones), estilos))
+    elementos.append(_grilla_participante(participante, sesiones_con_pruebas, estilos))
     elementos.append(Spacer(1, 0.4 * cm))
-    elementos.append(_resumen_ejecutivo(ranking, sesion, pruebas_por_tipo, estilos))
+    elementos.append(_tarjeta_comparacion_grupos_pdf(comparacion_grupos, estilos))
+    elementos.append(Spacer(1, 0.4 * cm))
+    elementos.append(Paragraph("Detalle secundario por sesión", estilos.etiqueta))
+    elementos.append(Spacer(1, 0.15 * cm))
+    elementos.append(_resumen_ejecutivo(ranking, pruebas_por_tipo, estilos, prueba_por_sesion))
     elementos.append(Spacer(1, 1.2 * cm))
     elementos.append(_pie_de_pagina_firma(estilos))
     elementos.append(PageBreak())
 
     # ---------- PÁGINA 2: MÉTRICAS PRINCIPALES ----------
     elementos.append(Paragraph("MÉTRICAS FISIOLÓGICAS", estilos.subtitulo))
+    hr_baseline_prom = np.nanmean([p.get("_hr_baseline") for p in pruebas if p.get("_hr_baseline") is not None]) if pruebas else None
     hr_prom_sesion = np.nanmean([p.get("hr_promedio") for p in pruebas if p.get("hr_promedio") is not None]) if pruebas else None
     sdnn_prom = np.nanmean([p.get("sdnn") for p in pruebas if p.get("sdnn") is not None]) if pruebas else None
     rmssd_prom = np.nanmean([p.get("rmssd") for p in pruebas if p.get("rmssd") is not None]) if pruebas else None
+    # "Baseline PROMEDIO" (no "el" baseline): con varios días, cada uno trae el suyo — este
+    # KPI de portada resume los N baselines en un solo número de un vistazo, pero el detalle
+    # por día real vive en _tabla_metricas_bloque (columna "Baseline (ese día)"), nunca se
+    # pierde ni se mezcla al calcular scores/deltas individuales.
     fila_kpi = Table(
         [
             [
-                _tarjeta_dato("HR baseline", f"{sesion['hr_baseline']:.1f} bpm" if sesion.get("hr_baseline") is not None else "N/A", estilos),
-                _tarjeta_dato("HR promedio sesión", f"{hr_prom_sesion:.1f} bpm" if hr_prom_sesion is not None and not np.isnan(hr_prom_sesion) else "N/A", estilos),
+                _tarjeta_dato("Baseline promedio", f"{hr_baseline_prom:.1f} bpm" if hr_baseline_prom is not None and not np.isnan(hr_baseline_prom) else "N/A", estilos),
+                _tarjeta_dato("HR promedio estímulos", f"{hr_prom_sesion:.1f} bpm" if hr_prom_sesion is not None and not np.isnan(hr_prom_sesion) else "N/A", estilos),
                 _tarjeta_dato("SDNN promedio", f"{sdnn_prom:.1f} ms" if sdnn_prom is not None and not np.isnan(sdnn_prom) else "N/A", estilos),
                 _tarjeta_dato("RMSSD promedio", f"{rmssd_prom:.1f} ms" if rmssd_prom is not None and not np.isnan(rmssd_prom) else "N/A", estilos),
             ]
@@ -900,21 +1155,24 @@ def generar_reporte_pdf(
     fila_kpi.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 4), ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3)]))
     elementos.append(fila_kpi)
     elementos.append(Spacer(1, 0.5 * cm))
-    buffer_hr_bloques = _grafico_hr_bloques(sesion, pruebas_por_tipo)
+    buffer_hr_bloques = _grafico_hr_bloques(pruebas_por_tipo)
     elementos.append(Image(buffer_hr_bloques, width=17 * cm, height=7.3 * cm))
     elementos.append(Spacer(1, 0.4 * cm))
-    elementos.append(_tabla_metricas_bloque(sesion, pruebas_por_tipo, ranking))
+    elementos.append(_tabla_metricas_bloque(pruebas_por_tipo, ranking))
     elementos.append(PageBreak())
 
-    # ---------- PÁGINA 3: ANÁLISIS COMPARATIVO ----------
-    elementos.append(Paragraph("COMPARACIÓN ENTRE ESTÍMULOS", estilos.subtitulo))
-    buffer_comparacion = _grafico_comparacion_hr(sesion, pruebas_por_tipo)
+    # ---------- PÁGINA 3: COMPARACIÓN PRINCIPAL (H1/H0) + DETALLE POR ESTÍMULO ----------
+    elementos.append(Paragraph("RESULTADO PRINCIPAL: 2 GRUPOS (H1/H0)", estilos.subtitulo))
+    elementos.append(_tarjeta_comparacion_grupos_pdf(comparacion_grupos, estilos))
+    elementos.append(Spacer(1, 0.5 * cm))
+    elementos.append(Paragraph("Detalle secundario por estímulo", estilos.subtitulo))
+    buffer_comparacion = _grafico_comparacion_hr(pruebas_por_tipo)
     buffer_hrv = _grafico_hrv_comparacion(pruebas_por_tipo)
     fila_graficos = Table([[Image(buffer_comparacion, width=8.4 * cm, height=5.8 * cm), Image(buffer_hrv, width=8.4 * cm, height=5.8 * cm)]], colWidths=[8.5 * cm, 8.5 * cm])
     elementos.append(fila_graficos)
     elementos.append(Spacer(1, 0.5 * cm))
-    elementos.append(Paragraph("Puntaje de relajación", estilos.subtitulo))
-    elementos.append(_tabla_ranking_premium(ranking, sesion, estilos))
+    elementos.append(Paragraph("Puntaje de relajación por sesión", estilos.subtitulo))
+    elementos.append(_tabla_ranking_premium(ranking, pruebas_por_tipo, estilos, prueba_por_sesion))
     elementos.append(PageBreak())
 
     # ---------- PÁGINA 4: RESPUESTA SUBJETIVA ----------
@@ -926,12 +1184,12 @@ def generar_reporte_pdf(
     elementos.append(Paragraph("Comentarios y autorreporte por estímulo", estilos.subtitulo))
     elementos.append(_tabla_comentarios(pruebas_por_tipo, estilos))
     elementos.append(Spacer(1, 0.4 * cm))
-    elementos.append(Paragraph(_correlacion_preferencia_metricas(ranking, pruebas_por_tipo), estilos.cuerpo))
+    elementos.append(Paragraph(_correlacion_preferencia_metricas(ranking, pruebas_por_tipo, prueba_por_sesion), estilos.cuerpo))
     elementos.append(PageBreak())
 
     # ---------- PÁGINA 5: CONCLUSIONES E INSIGHTS ----------
     elementos.append(Paragraph("INTERPRETACIÓN", estilos.subtitulo))
-    texto_insight = _generar_insight(ranking, pruebas_por_tipo, sesion)
+    texto_insight = _generar_insight(ranking, pruebas_por_tipo, prueba_por_sesion, comparacion_grupos)
     caja_insight = Table([[Paragraph(texto_insight, estilos.insight)]], colWidths=[17 * cm])
     caja_insight.setStyle(
         TableStyle(
@@ -963,7 +1221,13 @@ def generar_reporte_pdf(
         ["Sistema", "Sistema Adaptativo de Frecuencias Terapéuticas — app_investigador.py"],
         ["Sensor cardíaco", "Wahoo TRACKR (BLE) o simulador — ver sesión registrada"],
         ["Base de datos", "SQL Server (BaseDatosTesis)"],
-        ["Sesión reportada", f"#{sesion['id_sesion']} — {sesion['fecha_hora'].strftime('%d/%m/%Y %H:%M') if sesion.get('fecha_hora') else '—'}"],
+        [
+            "Sesiones reportadas",
+            " · ".join(
+                f"#{s['id_sesion']} ({s['fecha_hora'].strftime('%d/%m/%Y') if s.get('fecha_hora') else '—'})"
+                for s, _ in sesiones_con_pruebas
+            ),
+        ],
         ["Reporte generado", _fecha_larga_es(datetime.now())],
     ]
     tabla_metadatos = Table(metadatos, colWidths=[5 * cm, 12 * cm])

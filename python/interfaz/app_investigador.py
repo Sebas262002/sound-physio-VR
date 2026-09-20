@@ -32,10 +32,39 @@ usando solo controles cuya API se verificó contra esta versión instalada.
 CAPTURA REAL (Vista 2) — reutiliza sesion_completa.py, no lo duplica ni lo modifica:
 _hilo_orquestador() importa y usa DIRECTO las mismas piezas que
 ejecutar_sesion_completa() usa internamente: CapturaSesion, SensorWahoo/
-HiloSensorBLE, CapturaAudio, ReproductorEstimulos, obtener_protocolo_tesis_final(),
+HiloSensorBLE, CapturaAudio, ReproductorEstimulos, obtener_protocolo_sesion_dia(),
 _resolver_audio_real(), _ejecutar_estabilizacion(), y los hilos módulo-nivel
 _hilo_sensor/_hilo_estimulos/_hilo_audio — exactamente la misma lógica de
 captura ya validada con hardware real en las sesiones piloto P01-P12.
+
+PROTOCOLO POR DÍA (no 4 estímulos en una sola sesión): a partir del rediseño
+pedido por el tutor, cada sesión real corre UN solo tipo de estímulo —
+baseline -> <tipo> -> cierre (ver obtener_protocolo_sesion_dia() y
+TIPOS_ESTANDARIZADOS en sesion_completa.py) — y el mismo participante vuelve
+en 4 días separados (24-48h entre cada uno): 2 días de sonido terapéutico
+(Días 1 y 3) + 2 días de preferencia musical, cada uno con una canción
+DISTINTA (Días 2 y 4) — ver el porqué de los 2 días de preferencia en
+comparar_grupos_terapeutica_vs_preferencia() más abajo. "Nueva sesión"
+(Vista 1) pide al investigador elegir a mano el Día (1/2/3/4) de la sesión
+que va a correr: Días 2 y 4 siempre son preferencia sonora personal (Día 2
+requiere campo_preferencia_wav, Día 4 requiere campo_preferencia_wav_2 —
+canción distinta a la de Día 2); Días 1 y 3 usan el sorteo determinístico de
+asignar_estimulos_dia1_dia3() (mismo participante_id -> mismo resultado,
+sin necesidad de persistir qué le tocó). Por eso self.bloques_estimulo_sesion
+(armado en _al_registrar_participante) tiene UN solo elemento, no los 4 de
+_METADATOS_TIPO_ESTIMULO — ver ese atributo para el cuestionario post-hoc.
+
+RESULTADO CENTRAL DE LA TESIS (H1/H0, Anexo 5 página 19): la hipótesis NO
+compara las 4 sesiones individualmente entre sí — compara exactamente 2
+GRUPOS pooleados: "frecuencias terapéuticas comunes" (Días 1+3 promediados)
+vs. "sonidos de preferencia personal" (Días 2+4 promediados). Por eso los 2
+días de preferencia existen (para tener con qué promediar ese grupo, igual
+que los 2 días terapéuticos) — NO para comparar una canción de preferencia
+contra la otra, ni un tipo terapéutico contra el otro. Ver
+Recomendador.comparar_grupos_terapeutica_vs_preferencia() y la pestaña
+Recomendación (_tab_recomendacion / _construir_tarjeta_comparacion_grupos),
+que muestra este resultado de 2 grupos como PRIMARIO; el ranking sesión por
+sesión (calcular_score_relajacion()) queda como detalle SECUNDARIO.
 
 ¿Por qué no se llama directo a ejecutar_sesion_completa() (una sola línea)?
 Porque esa función es 100% bloqueante y no expone hacia afuera ni
@@ -57,12 +86,13 @@ sistema real no tiene.
 ¿Por qué el Cuestionario (Vista 3) es POST-HOC (después de toda la sesión)
 y no intercalado entre estímulos? Por la misma razón: nada en
 sesion_completa.py pausa la captura a mitad de camino para esperar una
-respuesta del investigador. La sesión completa (~8 min, protocolo real de
-obtener_protocolo_tesis_final()) corre de punta a punta sin interrupciones;
-al terminar, se analiza con analizar_metricas_sesion() (mismo pipeline que
-el reporte .md/PDF) y ahí sí se muestran los 4 cuestionarios en secuencia,
-uno por cada bloque de estímulo real (solfeggio_528Hz, binaural_alpha,
-isocronico_alpha, preferencia) — ver mapear_bloque_a_prueba() en
+respuesta del investigador. La sesión de UN día (baseline -> estímulo ->
+cierre, protocolo real de obtener_protocolo_sesion_dia()) corre de punta a
+punta sin interrupciones; al terminar, se analiza con
+analizar_metricas_sesion() (mismo pipeline que el reporte .md/PDF) y ahí sí
+se muestra el único cuestionario de ese día (binaural_theta,
+solfeggio_isocronico_528Hz, paisaje_biofilico o preferencia, según el día
+— ver self.bloques_estimulo_sesion) — ver mapear_bloque_a_prueba() en
 bd_sqlserver.py para cómo se traduce cada nombre de bloque a tipo_estimulo/
 frecuencia_hz.
 
@@ -89,6 +119,7 @@ por código. Si no existe, el reporte se genera igual, solo que sin logo (con
 una advertencia en el log) — nunca falla por esto.
 """
 
+import asyncio
 import logging
 import math
 import sys
@@ -106,7 +137,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, r"C:\Tesis_Kevin\python")
 sys.path.insert(0, r"C:\Tesis_Kevin\python\database")
 sys.path.insert(0, r"C:\Tesis_Kevin\python\analisis")
+sys.path.insert(0, r"C:\Tesis_Kevin\python\sensor")
 
+from escanear_ble import escanear_dispositivos  # noqa: E402
 from bd_sqlserver import BaseDatosTesis, mapear_bloque_a_prueba  # noqa: E402
 from analizar_sesion_completa import analizar_metricas_sesion  # noqa: E402
 from analizar_sesion import CARPETA_GRAFICAS  # noqa: E402
@@ -117,7 +150,9 @@ from sesion_completa import (  # noqa: E402
     CapturaSesion,
     CapturaAudio,
     ReproductorEstimulos,
-    obtener_protocolo_tesis_final,
+    TIPOS_ESTANDARIZADOS,
+    asignar_estimulos_dia1_dia3,
+    obtener_protocolo_sesion_dia,
     _resolver_audio_real,
     _calcular_duracion_total_protocolo,
     _ejecutar_estabilizacion,
@@ -153,47 +188,84 @@ CARPETA_EXPORTS = Path(r"C:\Tesis_Kevin\resultados\exportados")
 CARPETA_BACKUPS = Path(r"C:\Tesis_Kevin\datos\backups")
 RUTA_LOGO_ESPE = Path(__file__).parent / "assets" / "logo_espe.png"
 
-# Duraciones de baseline/descanso/cierre usadas por ESTA app (a pedido explícito del
-# usuario, no las 60s/30s "de tesis" — ver la ADVERTENCIA en obtener_protocolo_tesis_final()
-# de sesion_completa.py: eso deja SDNN de baseline con menos margen de confiabilidad que el
-# recomendado por el Task Force ESC/NASPE 1996). Los bloques de ESTÍMULO (Solfeggio/Binaural/
-# Isocrónico/Preferencia) siguen en 60s — esos no se tocaron.
+# Duraciones usadas por ESTA app — decisión explícita, mitad y mitad:
+#   - DURACION_ESTIMULO_SEG SÍ sigue el Estado del Arte al pie de la letra: 300s
+#     (5 min) es el mínimo que exige Task Force ESC/NASPE 1996 para RMSSD/SDNN
+#     confiables, y la duración que Jin et al. (2026) y Liu & Li (2026) validaron
+#     como óptima de inmersión (ver mismo rationale en generador_tonos.py, donde
+#     los WAV ya se generan a 300s). Para que una sesión real cuente como dato de
+#     tesis, el estímulo tiene que durar esto, no menos.
+#   - DURACION_BASELINE_SEG y DURACION_CIERRE_SEG se dejan cortos (15s) A PROPÓSITO
+#     (a pedido explícito del usuario) en vez de los 120s que el Task Force
+#     recomienda para un baseline con margen de confiabilidad completo — el
+#     mismo trade-off de SDNN de baseline ya documentado antes, asumido a
+#     conciencia para no alargar cada sesión con silencio.
+# Ya no hay bloques "descanso": el protocolo por día es baseline -> UN estímulo ->
+# cierre (ver obtener_protocolo_sesion_dia()), nunca los 4 tipos seguidos en la
+# misma sesión.
 DURACION_BASELINE_SEG = 15
-DURACION_DESCANSO_SEG = 10
-DURACION_CIERRE_SEG = 60
+DURACION_ESTIMULO_SEG = 300
+DURACION_CIERRE_SEG = 15
 
-# Los 4 bloques de ESTÍMULO del protocolo real (ver obtener_protocolo_tesis_final()
-# en sesion_completa.py) — los otros 5 bloques (baseline/descansoN/cierre) son
-# silencio y no llevan cuestionario (ver mapear_bloque_a_prueba() en bd_sqlserver.py).
-BLOQUES_ESTIMULO = [
-    {"nombre": "solfeggio_528Hz", "titulo": "Solfeggio 528Hz", "icono": "🎵"},
-    {"nombre": "binaural_alpha", "titulo": "Binaural Alpha", "icono": "🎧"},
-    {"nombre": "isocronico_alpha", "titulo": "Isocrónico Alpha", "icono": "🔊"},
-    {"nombre": "preferencia", "titulo": "Preferencia personal", "icono": "❤️"},
-]
+# MAC del Wahoo que la sesión real va a intentar conectar (ver
+# _al_registrar_participante(): sensor = SensorWahoo(), sin override de
+# mac_address) — se lee del propio default de SensorWahoo en vez de duplicar el
+# literal acá, para que el chequeo de hardware (ver _verificar_wahoo_ble) nunca
+# pueda desincronizarse silenciosamente de la MAC que la sesión usa de verdad.
+MAC_WAHOO_DEFAULT = SensorWahoo().mac_address
 
-# Etiquetas legibles para TODOS los 9 bloques del protocolo (obtener_protocolo_tesis_final()
-# en sesion_completa.py), no solo los 4 de estímulo — usado por la barra segmentada y el
-# "Siguiente: ..." de la Vista en vivo. Reutiliza los títulos de BLOQUES_ESTIMULO en vez de
-# duplicarlos.
+
+async def _escanear_mac_wahoo(mac: str, timeout_seg: float = 12.0) -> bool:
+    """Escaneo BLE corto (ver sensor/escanear_ble.py): True si `mac` aparece entre
+    los anuncios BLE recibidos durante timeout_seg segundos — confirma que el
+    sensor Wahoo está prendido y cerca, con el mismo criterio de "chequeo real,
+    no cosmético" que UnityOSC.ping() ya usa para el Meta Quest 2 (ver
+    _al_cambiar_switch_vr).
+
+    timeout_seg=12.0 por defecto — valor encontrado probando en vivo con el
+    Wahoo TRACKR real de este proyecto: 4s (el default original) NUNCA lo
+    detectó, 8s lo detectó solo 1 de 3 intentos, 12s lo detectó 3 de 3. El
+    TRACKR anuncia en un intervalo bastante largo (ahorro de batería de un
+    sensor de pecho) — 12s no es "instantáneo" para un chequeo de switch, pero
+    un falso negativo acá bloquearía al investigador de arrancar una sesión
+    real con el sensor puesto y funcionando, que es peor que esperar 12s.
+    """
+    dispositivos = await escanear_dispositivos(timeout_seg=timeout_seg)
+    return any(dispositivo.address.upper() == mac.upper() for dispositivo in dispositivos)
+
+
+# Metadatos (título/ícono) de CADA tipo de estímulo posible del protocolo por día
+# (ver TIPOS_ESTANDARIZADOS en sesion_completa.py) — lookup, NO "los bloques de
+# esta sesión": una sesión real ahora corre uno solo de estos 4 (el que le tocó a
+# ese participante ese día, ver asignar_estimulos_dia1_dia3()). El bloque real de
+# la sesión en curso vive en self.bloques_estimulo_sesion (un solo elemento),
+# armado en _al_registrar_participante().
+_METADATOS_TIPO_ESTIMULO = {
+    "binaural_theta": {"titulo": "Binaural Theta", "icono": "🎧"},
+    "solfeggio_isocronico_528Hz": {"titulo": "Solfeggio + Isocrónico 528Hz", "icono": "🎵"},
+    "paisaje_biofilico": {"titulo": "Paisaje biofílico", "icono": "🌿"},
+    "preferencia": {"titulo": "Preferencia personal", "icono": "❤️"},
+}
+
+# Etiquetas legibles para los 5 bloques posibles del protocolo (obtener_protocolo_sesion_dia()
+# en sesion_completa.py: baseline, UN estímulo de los 4 de _METADATOS_TIPO_ESTIMULO, cierre)
+# — usado por la barra segmentada y el "Siguiente: ..." de la Vista en vivo.
 _ETIQUETAS_BLOQUE = {
     "baseline": "Baseline (reposo)",
-    "descanso1": "Descanso",
-    "descanso2": "Descanso",
-    "descanso3": "Descanso",
     "cierre": "Cierre",
-    **{b["nombre"]: b["titulo"] for b in BLOQUES_ESTIMULO},
+    **{nombre: meta["titulo"] for nombre, meta in _METADATOS_TIPO_ESTIMULO.items()},
 }
 
 # tipo_estimulo tal como se guarda en la tabla "pruebas" (ver _TIPOS_ESTIMULO en
-# bd_sqlserver.py: "solfeggio", "binaural", "isocronico", "preferencia" — SIN el sufijo
-# "_528Hz"/"_alpha" que sí usan los nombres de bloque del protocolo) — un color fijo por
-# tipo en vez de un color por índice de fila, para que "solfeggio" sea siempre indigo se
-# muestre donde se muestre (ver _tab_comparacion_estimulos).
+# bd_sqlserver.py: "solfeggio_isocronico", "paisaje", "binaural", "preferencia" — el
+# nombre de bloque real ya resuelto por mapear_bloque_a_prueba(), sin el sufijo
+# "_theta"/"_528Hz"/"_biofilico") — un color fijo por tipo en vez de un color por
+# índice de fila, para que cada tipo se muestre siempre con el mismo color donde
+# se muestre (ver _tab_comparacion_estimulos).
 _COLOR_POR_TIPO_ESTIMULO = {
-    "solfeggio": Colors.PRIMARY,
+    "solfeggio_isocronico": Colors.PRIMARY,
     "binaural": Colors.SECONDARY,
-    "isocronico": Colors.ACCENT,
+    "paisaje": Colors.ACCENT,
     "preferencia": Colors.SUCCESS,
 }
 
@@ -300,11 +372,17 @@ class AppInvestigador:
         self.usar_sensor_real: bool = False
         self.reproducir_audio_real: bool = True
         self.ruta_preferencia_wav: Optional[str] = None
+        self.ruta_preferencia_wav_2: Optional[str] = None
         # VR (Meta Quest 2, solo visual — ver vr/unity_osc.py). _vr_ok arranca en True
         # porque con el switch apagado (default) no bloquea nada; se pone en False recién
         # cuando el switch se enciende y el ping todavía no confirmó que Unity responde.
         self.usar_vr: bool = False
         self._vr_ok: bool = True
+        # Sensor Wahoo (BLE real). _wahoo_ok arranca en True por la misma razón que
+        # _vr_ok: con el switch apagado (default) no bloquea nada; se pone en False
+        # recién cuando el switch se enciende y el escaneo BLE no lo detectó (ver
+        # _verificar_wahoo_ble, _al_cambiar_switch_sensor).
+        self._wahoo_ok: bool = True
 
         # --- Estado de la captura en curso (ver _hilo_orquestador) ---
         self.hilo_orquestador: Optional[threading.Thread] = None
@@ -316,13 +394,27 @@ class AppInvestigador:
         self.hr_historial: list[float] = []
         self.error_captura: Optional[str] = None
         self.captura_terminada: bool = False
+        # --- Espera de interacción embebida (usar_vr=True, ver INTERACCIÓN EMBEBIDA en
+        # el docstring de sesion_completa.py): el participante camina libremente en el
+        # entorno VR hasta que se sienta; recién ahí arranca el t0 real. Mientras
+        # esperando_sentado es True, _vista_sesion_en_vivo() muestra un panel distinto
+        # con un botón "Cancelar sesión" que setea este Event. ---
+        self.esperando_sentado: bool = False
+        self._evento_cancelar_espera_sentado: threading.Event = threading.Event()
         # Bloques (nombre/duracion_seg) del protocolo de ESTA sesión, calculado en
         # _al_registrar_participante() ANTES de navegar a la Vista en vivo — así la
         # barra segmentada y el "Siguiente: ..." ya tienen datos reales en el primer
         # render, sin esperar a que _hilo_orquestador() arranque (ese hilo recalcula
-        # su propia copia por separado; llamar dos veces a obtener_protocolo_tesis_final()
+        # su propia copia por separado; llamar dos veces a obtener_protocolo_sesion_dia()
         # es seguro porque es una función pura, sin efectos secundarios).
         self.protocolo_activo: list[dict] = []
+        # Día (1/2/3) y tipo de estímulo YA sorteado/asignado para la sesión en curso
+        # (ver PROTOCOLO POR DÍA en el docstring del módulo y _al_registrar_participante) —
+        # bloques_estimulo_sesion tiene un único elemento: el cuestionario post-hoc
+        # (Vista 3) itera sobre esto, no sobre _METADATOS_TIPO_ESTIMULO completo.
+        self.dia_sesion: int = 1
+        self.tipo_estimulo_sesion: Optional[str] = None
+        self.bloques_estimulo_sesion: list[dict] = []
         # --- Estado SOLO de UI para las mejoras visuales de la Vista en vivo — nunca
         # se escribe nada de esto en el sensor/hilos, solo se lee (peek) igual que
         # hr_historial/_peek_hr ya hacían. Ver _actualizar_controles_en_vivo_real(). ---
@@ -833,24 +925,26 @@ class AppInvestigador:
                 logger.error(f"No se pudo calcular el siguiente ID: {error}")
 
         self.formulario = FormularioParticipante(id_sugerido, on_change=self._revalidar_formulario)
+        # Autocompletado al salir del campo ID (on_blur, no on_change — on_change
+        # dispara en CADA tecla mientras escribe el ID, y una consulta a SQL Server
+        # por tecla sería un desperdicio y podría parpadear la UI a medio tipear).
+        # Ver _autocompletar_participante_existente().
+        self.formulario.campo_id.on_blur = self._autocompletar_participante_existente
 
         mic_ok = self._verificar_microfono()
         db_ok = self.bd is not None
 
-        # Envuelto en Container para poder REEMPLAZAR el IndicadorHardware entero cuando
-        # cambia el estado (switch apagado / ping OK / ping falló) — mismo patrón que
-        # contenedor_selector_sesion en _tab_recomendacion(): reemplazar el control, no
-        # mutar sus props in-place (ver el bug real documentado ahí).
+        # Envueltos en Container para poder REEMPLAZAR el IndicadorHardware entero cuando
+        # cambia el estado (switch apagado / detectado / no detectado) — mismo patrón que
+        # contenedor_tabla en _tab_resumen_general(): reemplazar el control, no mutar sus
+        # props in-place (ver el bug real documentado ahí).
+        self._contenedor_indicador_wahoo = ft.Container(content=self._construir_indicador_wahoo())
         self._contenedor_indicador_vr = ft.Container(content=self._construir_indicador_vr())
 
         panel_hardware = ft.Column(
             spacing=Spacing.XS,
             controls=[
-                IndicadorHardware(
-                    "Sensor cardíaco Wahoo TRACKR (BLE)",
-                    False,
-                    "Verificación en tiempo real todavía no integrada (ver TODO en el docstring del módulo)",
-                ),
+                self._contenedor_indicador_wahoo,
                 IndicadorHardware(
                     "Micrófono F15-2",
                     mic_ok,
@@ -893,8 +987,50 @@ class AppInvestigador:
             ),
         )
 
+        # --- Día de la sesión (1/2/3/4, ver PROTOCOLO POR DÍA en el docstring del
+        # módulo) — el investigador lo elige a mano; Días 2 y 4 fuerzan
+        # tipo_estimulo="preferencia" y exigen su propio campo de ruta (campo_preferencia_wav
+        # para Día 2, campo_preferencia_wav_2 para Día 4 — canción DISTINTA, ver
+        # _revalidar_formulario, _al_registrar_participante). ft.Dropdown en esta versión
+        # de Flet no dispara "on_change" (ver el mismo bug real documentado en
+        # selector_orden más abajo, en _tab_participantes) — el evento correcto es
+        # "on_select". ---
+        self.selector_dia = ft.Dropdown(
+            label="Día de la sesión",
+            value="1",
+            border_radius=Radius.INPUT,
+            filled=True,
+            fill_color=Colors.BG_MAIN,
+            border_color=Colors.BORDER,
+            focused_border_color=Colors.PRIMARY,
+            options=[
+                ft.dropdown.Option("1", "Día 1 — estímulo sorteado"),
+                ft.dropdown.Option("2", "Día 2 — preferencia personal (1ª canción)"),
+                ft.dropdown.Option("3", "Día 3 — estímulo sorteado"),
+                ft.dropdown.Option("4", "Día 4 — preferencia personal (2ª canción)"),
+            ],
+        )
+        self.selector_dia.on_select = lambda e: self._revalidar_formulario()
+
         # --- Modo de sesión: real vs. simulado (ver CAPTURA REAL en el docstring del módulo) ---
-        self.check_sensor_real = ft.Switch(label="Usar sensor Wahoo TRACKR real (BLE)", value=False, active_color=Colors.PRIMARY)
+        # Chequeo real, no cosmético (mismo criterio que _al_cambiar_switch_vr más abajo):
+        # al prender el switch, corre un escaneo BLE corto (_verificar_wahoo_ble) buscando
+        # la MAC exacta que la sesión real va a intentar conectar (MAC_WAHOO_DEFAULT) — el
+        # ícono de arriba recién se pone verde si lo encontró de verdad.
+        def _al_cambiar_switch_sensor(e: ft.ControlEvent) -> None:
+            if self.check_sensor_real.value:
+                self._wahoo_ok = self._verificar_wahoo_ble()
+            else:
+                self._wahoo_ok = True  # apagado no bloquea nada, ver _revalidar_formulario()
+            self._contenedor_indicador_wahoo.content = self._construir_indicador_wahoo()
+            self._revalidar_formulario()
+
+        self.check_sensor_real = ft.Switch(
+            label="Usar sensor Wahoo TRACKR real (BLE)",
+            value=False,
+            active_color=Colors.PRIMARY,
+            on_change=_al_cambiar_switch_sensor,
+        )
         self.check_audio_real = ft.Switch(label="Reproducir estímulos de audio reales", value=True, active_color=Colors.PRIMARY)
 
         # --- VR (Meta Quest 2, SOLO visual — ver vr/unity_osc.py). El audio no cambia en
@@ -915,7 +1051,7 @@ class AppInvestigador:
         )
 
         self.campo_preferencia_wav = ft.TextField(
-            label="Ruta al audio de preferencia personal (opcional)",
+            label="Ruta al audio de preferencia personal (obligatorio en Día 2)",
             hint_text=r"C:\Tesis_Kevin\audio_estimulos\preferencias\mi_cancion.wav",
             border_radius=Radius.INPUT,
             filled=True,
@@ -923,6 +1059,21 @@ class AppInvestigador:
             border_color=Colors.BORDER,
             focused_border_color=Colors.PRIMARY,
             prefix_icon=ft.Icons.AUDIO_FILE_OUTLINED,
+            on_change=lambda e: self._revalidar_formulario(),
+        )
+
+        # Segunda canción de preferencia (Día 4) -- debe ser DISTINTA a la de Día 2,
+        # ver PROTOCOLO POR DÍA en el docstring del módulo de sesion_completa.py.
+        self.campo_preferencia_wav_2 = ft.TextField(
+            label="Ruta al audio de preferencia personal — 2ª canción (obligatorio en Día 4)",
+            hint_text=r"C:\Tesis_Kevin\audio_estimulos\preferencias\mi_otra_cancion.wav",
+            border_radius=Radius.INPUT,
+            filled=True,
+            fill_color=Colors.BG_MAIN,
+            border_color=Colors.BORDER,
+            focused_border_color=Colors.PRIMARY,
+            prefix_icon=ft.Icons.AUDIO_FILE_OUTLINED,
+            on_change=lambda e: self._revalidar_formulario(),
         )
 
         def _tarjeta(titulo: str, icono: str, contenido: ft.Control) -> ft.Control:
@@ -949,6 +1100,7 @@ class AppInvestigador:
         panel_modo_sesion = ft.Column(
             spacing=Spacing.SM,
             controls=[
+                self.selector_dia,
                 self.check_sensor_real,
                 self.check_audio_real,
                 self.check_usar_vr,
@@ -958,16 +1110,21 @@ class AppInvestigador:
                     color=Colors.TEXT_SECONDARY,
                 ),
                 self.campo_preferencia_wav,
+                self.campo_preferencia_wav_2,
                 ft.Container(
                     padding=ft.padding.Padding.all(Spacing.SM),
                     border_radius=Radius.INPUT,
                     bgcolor=ft.Colors.with_opacity(0.08, Colors.WARNING),
                     content=ft.Text(
-                        f"Protocolo: baseline {DURACION_BASELINE_SEG}s, Solfeggio 528Hz 60s, descanso "
-                        f"{DURACION_DESCANSO_SEG}s, Binaural Alpha 60s, descanso {DURACION_DESCANSO_SEG}s, "
-                        f"Isocrónico Alpha 60s, descanso {DURACION_DESCANSO_SEG}s, Preferencia 60s, cierre "
-                        f"{DURACION_CIERRE_SEG}s — no se puede pausar ni saltar bloques a mitad de camino "
-                        "(ver docstring del módulo).",
+                        f"Protocolo de UN día: baseline {DURACION_BASELINE_SEG}s -> UN estímulo "
+                        f"{DURACION_ESTIMULO_SEG}s (Días 2 y 4: preferencia personal, canción distinta "
+                        f"cada día; Días 1 y 3: sorteado entre binaural_theta / "
+                        f"solfeggio_isocronico_528Hz / paisaje_biofilico, ver "
+                        f"asignar_estimulos_dia1_dia3()) -> cierre {DURACION_CIERRE_SEG}s — no se puede "
+                        "pausar ni saltar bloques a mitad de camino (ver docstring del módulo). Con "
+                        "Meta Quest 2 activado: el participante camina libremente por el entorno VR y "
+                        "el protocolo recién arranca cuando se sienta en la silla (confirmado por "
+                        "Unity) — la Vista en vivo muestra 'Esperando a que se siente...' hasta entonces.",
                         size=11,
                         color=Colors.TEXT_SECONDARY,
                     ),
@@ -1027,6 +1184,59 @@ class AppInvestigador:
             ],
         )
 
+    def _autocompletar_participante_existente(self, e: ft.ControlEvent) -> None:
+        """Si el ID que se acaba de escribir en campo_id ya existe en la BD, precarga
+        sus datos demográficos y sus rutas de audio de preferencia si ya las tenía
+        guardadas (mismo participante — no hace falta re-tipearlas en cada uno de
+        sus 4 días) y sugiere el Día siguiente en self.selector_dia.
+
+        La sugerencia de Día es una HEURÍSTICA (cantidad de sesiones ya guardadas +
+        1, tope 4), NO un dato autoritativo: bd_sqlserver.py no persiste ningún
+        campo "dia" en la tabla de sesiones (el Día es un concepto que solo existe
+        en memoria, ver PROTOCOLO POR DÍA en el docstring del módulo), así que esto
+        puede quedar mal si una sesión anterior falló a mitad de camino sin
+        guardarse, o si el investigador necesita repetir un día. Por eso queda
+        editable — nunca deshabilita el selector, solo lo pre-selecciona.
+
+        No toca check_consentimiento a propósito: el consentimiento se confirma
+        activamente cada sesión, no se hereda de una sesión anterior.
+        """
+        if self.bd is None:
+            return
+        id_participante = (self.formulario.campo_id.value or "").strip()
+        if not id_participante:
+            return
+
+        participantes = self.bd.obtener_participantes()
+        existente = next((p for p in participantes if p.get("id_participante") == id_participante), None)
+        if existente is None:
+            return  # ID nuevo (o todavía no registrado): nada que precargar
+
+        self.formulario.campo_edad.value = str(existente["edad"])
+        self.formulario.grupo_genero.establecer(existente["genero"])
+        # .get() (no []): si todavía no se corrió el ALTER TABLE que agrega esta
+        # columna (ver ESQUEMA DE LA BASE en bd_sqlserver.py), el SELECT * de
+        # obtener_participantes() simplemente no la trae — sin esto, romper acá.
+        ruta_guardada = existente.get("ruta_preferencia_wav")
+        if ruta_guardada and getattr(self, "campo_preferencia_wav", None) is not None:
+            self.campo_preferencia_wav.value = ruta_guardada
+        ruta_guardada_2 = existente.get("ruta_preferencia_wav_2")
+        if ruta_guardada_2 and getattr(self, "campo_preferencia_wav_2", None) is not None:
+            self.campo_preferencia_wav_2.value = ruta_guardada_2
+
+        sesiones_previas = self.bd.obtener_sesiones_participante(id_participante)
+        dia_sugerido = min(len(sesiones_previas) + 1, 4)
+        if getattr(self, "selector_dia", None) is not None:
+            self.selector_dia.value = str(dia_sugerido)
+
+        self._mostrar_snack(
+            SnackBarExito(
+                f"{id_participante} ya existe ({len(sesiones_previas)} sesión(es) previa(s)) — "
+                f"datos precargados, Día {dia_sugerido} sugerido (revisalo antes de registrar)."
+            )
+        )
+        self._revalidar_formulario()
+
     def _revalidar_formulario(self) -> None:
         """Habilita/deshabilita el botón de registro y muestra qué falta, en vivo."""
         if self.formulario is None:
@@ -1037,9 +1247,51 @@ class AppInvestigador:
         # falta, en vez de un mensaje aparte (ver texto_validacion_formulario más abajo).
         if getattr(self, "check_usar_vr", None) is not None and self.check_usar_vr.value and not self._vr_ok:
             errores.append("Meta Quest 2 no responde — activá Unity con el Quest conectado y presioná Play.")
+        # Wahoo activado pero no detectado por BLE: mismo criterio que VR arriba —
+        # no dejar arrancar una sesión real con un sensor que ya sabemos que no está.
+        if getattr(self, "check_sensor_real", None) is not None and self.check_sensor_real.value and not self._wahoo_ok:
+            errores.append("Sensor Wahoo TRACKR no detectado por BLE — verificá que esté prendido y cerca.")
+        # Días 2 y 4 son SIEMPRE preferencia personal (ver PROTOCOLO POR DÍA en el
+        # docstring del módulo) — sin su ruta de WAV ese bloque no tendría qué
+        # reproducir. Cada día usa su propio campo (canción DISTINTA en Día 4).
+        if (
+            getattr(self, "selector_dia", None) is not None
+            and self.selector_dia.value == "2"
+            and not (getattr(self, "campo_preferencia_wav", None) and (self.campo_preferencia_wav.value or "").strip())
+        ):
+            errores.append("Día 2 requiere la ruta al audio de preferencia personal.")
+        if (
+            getattr(self, "selector_dia", None) is not None
+            and self.selector_dia.value == "4"
+            and not (getattr(self, "campo_preferencia_wav_2", None) and (self.campo_preferencia_wav_2.value or "").strip())
+        ):
+            errores.append("Día 4 requiere la ruta a la segunda canción de preferencia personal (distinta a la de Día 2).")
         self.boton_registrar.disabled = bool(errores)
         self.texto_validacion_formulario.value = "\n".join(f"• {e}" for e in errores)
         self._actualizar_pagina_segura()
+
+    def _construir_indicador_wahoo(self) -> ft.Control:
+        """Arma el IndicadorHardware del sensor Wahoo según el estado actual: switch
+        apagado (neutro), encendido+detectado (verde), encendido+no detectado (rojo).
+        Mismo patrón que _construir_indicador_vr (getattr porque se llama también en
+        la construcción inicial de la vista, antes de que self.check_sensor_real
+        exista todavía)."""
+        switch = getattr(self, "check_sensor_real", None)
+        if switch is None or not switch.value:
+            return IndicadorHardware(
+                "Sensor cardíaco Wahoo TRACKR (BLE)",
+                False,
+                "Desactivado — activá el switch para verificarlo y usarlo en esta sesión.",
+            )
+        if self._wahoo_ok:
+            return IndicadorHardware(
+                "Sensor cardíaco Wahoo TRACKR (BLE)", True, f"Detectado por BLE ({MAC_WAHOO_DEFAULT})."
+            )
+        return IndicadorHardware(
+            "Sensor cardíaco Wahoo TRACKR (BLE)",
+            False,
+            "No se detectó por BLE — verificá que esté prendido, con los electrodos húmedos, y cerca.",
+        )
 
     def _construir_indicador_vr(self) -> ft.Control:
         """Arma el IndicadorHardware de Meta Quest 2 según el estado actual: switch
@@ -1078,6 +1330,44 @@ class AppInvestigador:
             logger.warning(f"No se pudo verificar el micrófono: {error}")
             return False
 
+    @staticmethod
+    def _verificar_wahoo_ble(timeout_seg: float = 12.0) -> bool:
+        """Chequeo real y no cosmético (ver _escanear_mac_wahoo): True si la MAC del
+        Wahoo (MAC_WAHOO_DEFAULT) aparece en un escaneo BLE de 12s (ver el porqué
+        de ese número exacto en _escanear_mac_wahoo — 4s y 8s daban falsos
+        negativos probando con el sensor real de este proyecto). Un escaneo
+        puede seguir dando un falso negativo puntual si el sensor anuncia en un
+        intervalo todavía más largo (ver sensor/escanear_ble.py) — no es 100%
+        definitivo, la conexión real al arrancar la sesión
+        (HiloSensorBLE.iniciar()) es la que manda.
+
+        Corre en un hilo aparte a propósito: este método se llama desde el
+        on_change del switch, que Flet dispara en el MISMO hilo donde ya corre su
+        propio event loop de asyncio — asyncio.run() no se puede llamar si ya hay
+        un loop corriendo en ese hilo (RuntimeError real, encontrado probando esto:
+        "asyncio.run() cannot be called from a running event loop"). Un hilo nuevo
+        no hereda ningún loop, así que ahí adentro asyncio.run() es seguro; el
+        .join() de afuera preserva el mismo comportamiento bloqueante (~timeout_seg)
+        que ya tenía _al_cambiar_switch_sensor.
+
+        Returns:
+            bool: True si se detectó. False si no se detectó, O si el escaneo
+                falló (Bluetooth apagado, sin permisos, etc.) — nunca lanza
+                excepción hacia quien llama.
+        """
+        resultado: dict = {"detectado": False}
+
+        def _correr_scan() -> None:
+            try:
+                resultado["detectado"] = asyncio.run(_escanear_mac_wahoo(MAC_WAHOO_DEFAULT, timeout_seg=timeout_seg))
+            except Exception as error:
+                logger.warning(f"No se pudo escanear BLE para verificar el Wahoo: {error}")
+
+        hilo_scan = threading.Thread(target=_correr_scan, daemon=True)
+        hilo_scan.start()
+        hilo_scan.join()
+        return resultado["detectado"]
+
     def _al_registrar_participante(self, e: ft.ControlEvent) -> None:
         """Registra el participante y arranca la captura (Vista 2). La fila de 'sesiones'
         se crea recién al terminar (ver _guardar_en_sql_server()) — se necesitan las
@@ -1086,38 +1376,88 @@ class AppInvestigador:
             self._mostrar_snack(SnackBarError("No hay conexión a SQL Server; no se puede registrar."))
             return
 
+        # Validado también en _revalidar_formulario (deshabilita el botón) — se repite
+        # acá como última barrera antes de tocar la BD/el hardware real, por si el
+        # estado del botón quedó desactualizado.
+        dia_sesion = int(self.selector_dia.value or "1")
+        ruta_preferencia_wav = (self.campo_preferencia_wav.value or "").strip() or None
+        ruta_preferencia_wav_2 = (self.campo_preferencia_wav_2.value or "").strip() or None
+        if dia_sesion == 2 and ruta_preferencia_wav is None:
+            self._mostrar_snack(SnackBarError("Día 2 requiere la ruta al audio de preferencia personal."))
+            return
+        if dia_sesion == 4 and ruta_preferencia_wav_2 is None:
+            self._mostrar_snack(SnackBarError("Día 4 requiere la ruta a la segunda canción de preferencia personal."))
+            return
+
         datos = self.formulario.obtener_datos()
         try:
             registrado = self.bd.registrar_participante(
                 datos["id_participante"],
                 datos["edad"],
                 datos["genero"],
-                datos["mano_dominante"],
                 observaciones=datos["observaciones"],
                 consentimiento=datos["consentimiento"],
             )
             if not registrado:
                 logger.warning(f"{datos['id_participante']} ya existía; se reutiliza para la nueva sesión.")
 
+            # Guarda/actualiza la ruta de preferencia en el participante (no en la
+            # sesión) cada vez que se indica una — así el Día 2/Día 4 de ESTE MISMO
+            # participante la trae precargada la próxima vez (ver
+            # _autocompletar_participante_existente()). No es solo para Día 2/4: si
+            # se indicó en cualquier día, se guarda igual.
+            if ruta_preferencia_wav is not None:
+                self.bd.actualizar_ruta_preferencia(datos["id_participante"], ruta_preferencia_wav)
+            if ruta_preferencia_wav_2 is not None:
+                self.bd.actualizar_ruta_preferencia_2(datos["id_participante"], ruta_preferencia_wav_2)
+
             self.participante_actual = datos
             self.usar_sensor_real = bool(self.check_sensor_real.value)
             self.reproducir_audio_real = bool(self.check_audio_real.value)
-            self.ruta_preferencia_wav = (self.campo_preferencia_wav.value or "").strip() or None
+            self.ruta_preferencia_wav = ruta_preferencia_wav
+            self.ruta_preferencia_wav_2 = ruta_preferencia_wav_2
             self.usar_vr = bool(self.check_usar_vr.value)
+            self.dia_sesion = dia_sesion
+
+            # Días 2 y 4 son SIEMPRE preferencia personal (ver PROTOCOLO POR DÍA en el
+            # docstring del módulo, sesion_completa.py); Días 1 y 3 usan el sorteo
+            # determinístico de asignar_estimulos_dia1_dia3() — mismo participante_id
+            # siempre da el mismo resultado, sin necesidad de guardar en la BD qué le
+            # tocó cada día.
+            if self.dia_sesion in (2, 4):
+                self.tipo_estimulo_sesion = "preferencia"
+            else:
+                tipo_dia1, tipo_dia3 = asignar_estimulos_dia1_dia3(datos["id_participante"])
+                self.tipo_estimulo_sesion = tipo_dia1 if self.dia_sesion == 1 else tipo_dia3
+                logger.info(
+                    f"{datos['id_participante']} día {self.dia_sesion}: estímulo sorteado -> "
+                    f"'{self.tipo_estimulo_sesion}' (sorteo completo: día1='{tipo_dia1}', día3='{tipo_dia3}')"
+                )
+
+            self.bloques_estimulo_sesion = [
+                {
+                    "nombre": self.tipo_estimulo_sesion,
+                    **_METADATOS_TIPO_ESTIMULO.get(
+                        self.tipo_estimulo_sesion, {"titulo": self.tipo_estimulo_sesion, "icono": "🎧"}
+                    ),
+                }
+            ]
 
             # Aviso ANTES de arrancar (no solo en el log de consola, que a veces no se
-            # revisa): si va a sonar audio real pero no hay una ruta de preferencia
-            # válida, ese bloque va a quedar en silencio (degradación ya existente en
+            # revisa): si va a sonar audio real pero el WAV de preferencia no existe, ese
+            # bloque va a quedar en silencio (degradación ya existente en
             # _resolver_audio_real() de sesion_completa.py) — mejor que se sepa de una.
-            if self.reproducir_audio_real:
-                if self.ruta_preferencia_wav is None:
-                    self._mostrar_snack(
-                        SnackBarError("Sin ruta de audio de preferencia: ese bloque va a sonar en silencio.")
-                    )
-                elif not Path(self.ruta_preferencia_wav).exists():
-                    self._mostrar_snack(
-                        SnackBarError(f"No existe el archivo '{self.ruta_preferencia_wav}': ese bloque va a sonar en silencio.")
-                    )
+            # Ya se validó arriba que Día 2/Día 4 siempre traen su ruta, así que esto solo
+            # puede dispararse por un archivo que no existe en disco.
+            ruta_preferencia_de_este_dia = self.ruta_preferencia_wav_2 if self.dia_sesion == 4 else self.ruta_preferencia_wav
+            if (
+                self.reproducir_audio_real
+                and self.dia_sesion in (2, 4)
+                and not Path(ruta_preferencia_de_este_dia).exists()
+            ):
+                self._mostrar_snack(
+                    SnackBarError(f"No existe el archivo '{ruta_preferencia_de_este_dia}': ese bloque va a sonar en silencio.")
+                )
 
             # Reset de estado de captura: por si ya se corrió una sesión antes en el
             # mismo proceso de la app (ver el bug real de tiempo_transcurrido_sesion
@@ -1128,20 +1468,29 @@ class AppInvestigador:
             self.indice_pregunta_actual = 0
             self.error_captura = None
             self.captura_terminada = False
+            self.esperando_sentado = False
+            self._evento_cancelar_espera_sentado.clear()
             self._hr_baseline_muestras = []
             self._hr_baseline_vivo = None
             self._ultimo_hr_valor = None
             self._ultimo_hr_cambio_ts = None
-            # Mismo protocolo que _hilo_orquestador() va a recalcular — se pide acá
-            # también (función pura, sin I/O) solo para que la Vista en vivo tenga la
-            # lista de bloques disponible desde su primer render.
-            self.protocolo_activo = obtener_protocolo_tesis_final(
+            # Mismo protocolo (mismo tipo_estimulo_sesion ya sorteado arriba) que
+            # _hilo_orquestador() va a recalcular — se arma acá también (función pura,
+            # sin I/O) solo para que la Vista en vivo tenga la lista de bloques
+            # disponible desde su primer render.
+            self.protocolo_activo = obtener_protocolo_sesion_dia(
+                self.tipo_estimulo_sesion,
                 duracion_baseline_seg=DURACION_BASELINE_SEG,
-                duracion_descanso_seg=DURACION_DESCANSO_SEG,
+                duracion_estimulo_seg=DURACION_ESTIMULO_SEG,
                 duracion_cierre_seg=DURACION_CIERRE_SEG,
             )
 
-            self._mostrar_snack(SnackBarExito(f"{datos['id_participante']} registrado. Iniciando captura..."))
+            self._mostrar_snack(
+                SnackBarExito(
+                    f"{datos['id_participante']} registrado (Día {self.dia_sesion}, "
+                    f"estímulo '{self.tipo_estimulo_sesion}'). Iniciando captura..."
+                )
+            )
             self._navegar(2)
             self._iniciar_captura()
         except Exception as error:
@@ -1172,6 +1521,38 @@ class AppInvestigador:
                     ft.Text("La captura falló", size=20, weight=ft.FontWeight.BOLD),
                     ft.Text(self.error_captura, color=Colors.DANGER),
                     GradientButton("Volver a Inicio", on_click=lambda e: self._navegar(0)),
+                ],
+            )
+
+        # Interacción embebida (ver INTERACCIÓN EMBEBIDA en el docstring de
+        # sesion_completa.py): el participante todavía está caminando por el entorno
+        # VR — sensor y micrófono ya están conectados, pero t0/estabilización/audio NO
+        # arrancaron todavía. Reemplaza el cockpit normal entero mientras dura (no
+        # tiene sentido mostrar timers en 00:00 de un protocolo que no arrancó).
+        if self.esperando_sentado:
+            return ft.Column(
+                expand=True,
+                spacing=Spacing.LG,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                alignment=ft.MainAxisAlignment.CENTER,
+                controls=[
+                    ft.ProgressRing(color=Colors.PRIMARY),
+                    ft.Text("Esperando a que el participante se siente...", size=20, weight=ft.FontWeight.W_600),
+                    ft.Container(
+                        width=420,
+                        content=ft.Text(
+                            "El sensor y el micrófono ya están conectados. El participante puede "
+                            "seguir caminando por el entorno VR — el baseline, el estímulo y el "
+                            "cierre arrancan automáticamente en cuanto se siente en la silla.",
+                            size=13,
+                            color=Colors.TEXT_SECONDARY,
+                            text_align=ft.TextAlign.CENTER,
+                        ),
+                    ),
+                    ft.OutlinedButton(
+                        content=ft.Text("Cancelar sesión", color=Colors.DANGER),
+                        on_click=self._al_cancelar_espera_sentado,
+                    ),
                 ],
             )
 
@@ -1530,6 +1911,14 @@ class AppInvestigador:
             ],
         )
 
+    def _al_cancelar_espera_sentado(self, e: ft.ControlEvent) -> None:
+        """Botón "Cancelar sesión" del panel "Esperando a que se siente" (ver
+        _vista_sesion_en_vivo). Solo tiene efecto MIENTRAS self.esperando_sentado es
+        True — _hilo_orquestador() revisa este Event cada 0.5s dentro de
+        UnityOSC.esperar_confirmacion_sentado() (ver ese docstring)."""
+        self._evento_cancelar_espera_sentado.set()
+        self._mostrar_snack(SnackBarExito("Cancelando sesión..."))
+
     def _iniciar_captura(self) -> None:
         """Lanza _hilo_orquestador() en un hilo aparte para no bloquear la UI durante ~8 minutos."""
         self.hilo_orquestador = threading.Thread(
@@ -1549,14 +1938,16 @@ class AppInvestigador:
         try:
             fecha_hora = datetime.now().strftime("%Y%m%d_%H%M")
             reproductor = ReproductorEstimulos()
-            protocolo = obtener_protocolo_tesis_final(
+            protocolo = obtener_protocolo_sesion_dia(
+                self.tipo_estimulo_sesion,
                 duracion_baseline_seg=DURACION_BASELINE_SEG,
-                duracion_descanso_seg=DURACION_DESCANSO_SEG,
+                duracion_estimulo_seg=DURACION_ESTIMULO_SEG,
                 duracion_cierre_seg=DURACION_CIERRE_SEG,
                 usar_vr=self.usar_vr,
             )
             if self.reproducir_audio_real:
-                preferencia_wav = Path(self.ruta_preferencia_wav) if self.ruta_preferencia_wav else None
+                ruta_preferencia_de_este_dia = self.ruta_preferencia_wav_2 if self.dia_sesion == 4 else self.ruta_preferencia_wav
+                preferencia_wav = Path(ruta_preferencia_de_este_dia) if ruta_preferencia_de_este_dia else None
                 protocolo = _resolver_audio_real(protocolo, preferencia_wav)
             self.duracion_total_protocolo = _calcular_duracion_total_protocolo(protocolo)
             # Mismos nombre/duracion_seg que el self.protocolo_activo ya calculado en
@@ -1564,13 +1955,15 @@ class AppInvestigador:
             # versión real (post _resolver_audio_real) por si alguna vez difiere.
             self.protocolo_activo = protocolo
 
-            # --- VR (Meta Quest 2, solo visual) — ver vr/unity_osc.py. unity_osc queda en
-            # None si usar_vr=False: el resto de esta función no cambia de comportamiento
-            # en ese caso (default), ni un hilo/objeto de más. ---
+            # --- VR (Meta Quest 2) — ver vr/unity_osc.py. unity_osc queda en None si
+            # usar_vr=False: el resto de esta función no cambia de comportamiento en ese
+            # caso (default), ni un hilo/objeto de más. ---
             unity_osc: Optional[UnityOSC] = None
+            unity_avisado = False
             if self.usar_vr:
                 unity_osc = UnityOSC()
-                if not unity_osc.iniciar_sesion(participante_id):
+                unity_avisado = unity_osc.iniciar_sesion(participante_id)
+                if not unity_avisado:
                     logger.warning(
                         f"No se pudo avisarle a Unity que arrancó la sesión de {participante_id} "
                         "(¿está la escena corriendo?) — la sesión continúa igual, sin VR."
@@ -1594,6 +1987,29 @@ class AppInvestigador:
                     captura_audio = candidata
             except Exception as error:
                 logger.warning(f"Sin micrófono disponible ({error}); la sesión sigue sin grabar audio.")
+
+            # --- Interacción embebida (ver INTERACCIÓN EMBEBIDA en el docstring de
+            # sesion_completa.py): el participante camina libremente por el entorno VR
+            # con los dos joysticks hasta sentarse; recién ahí arranca la estabilización
+            # (que exige que ya esté quieto) y el protocolo real. Sensor y micrófono ya
+            # están conectados ANTES de esta espera (el chest strap se lo puso antes de
+            # ponerse el casco), así que no hay tiempo de hardware desperdiciado
+            # esperando. Sin límite de tiempo por diseño: el investigador cancela a mano
+            # con el botón de la Vista en vivo si algo no anda (Unity caído, participante
+            # tarda demasiado), en vez de que esto se corte solo por un timeout arbitrario. ---
+            if self.usar_vr and unity_avisado:
+                self.esperando_sentado = True
+                self._navegar(2)  # re-renderiza la Vista 2 mostrando el panel de espera
+                confirmado = unity_osc.esperar_confirmacion_sentado(cancelar=self._evento_cancelar_espera_sentado)
+                self.esperando_sentado = False
+                self._navegar(2)  # vuelve a re-renderizar, ya con el cockpit normal
+                if not confirmado:
+                    if hilo_ble is not None:
+                        hilo_ble.detener()
+                    raise RuntimeError(
+                        "Sesión cancelada: no se confirmó que el participante se sentó "
+                        "(cancelada a mano, o Unity dejó de responder)."
+                    )
 
             _ejecutar_estabilizacion(sensor, 30)
 
@@ -1683,6 +2099,7 @@ class AppInvestigador:
         except Exception as error:
             logger.error(f"Error en la captura de sesión: {error}")
             self.error_captura = str(error)
+            self.esperando_sentado = False
             if hilo_ble is not None:
                 try:
                     hilo_ble.detener()
@@ -1914,9 +2331,10 @@ class AppInvestigador:
         return fila.iloc[0].to_dict() if not fila.empty else None
 
     def _vista_cuestionario(self) -> ft.Control:
-        """Cuestionario post-estímulo (Likert + preferencia), uno por cada bloque de
-        BLOQUES_ESTIMULO — se muestra DESPUÉS de que termina toda la captura real (ver
-        CAPTURA REAL en el docstring del módulo)."""
+        """Cuestionario post-estímulo (Likert + preferencia) del ÚNICO bloque de estímulo
+        de esta sesión (self.bloques_estimulo_sesion, ver PROTOCOLO POR DÍA en el
+        docstring del módulo) — se muestra DESPUÉS de que termina toda la captura real
+        (ver CAPTURA REAL en el docstring del módulo)."""
         if self.participante_actual is None or self.resultado_metricas_sesion is None:
             return EmptyState(
                 ft.Icons.ASSIGNMENT_OUTLINED,
@@ -1925,7 +2343,7 @@ class AppInvestigador:
                 accion=GradientButton("Ir a Nueva sesión", on_click=lambda e: self._navegar(1), icono=ft.Icons.ARROW_FORWARD),
             )
 
-        bloque = BLOQUES_ESTIMULO[self.indice_pregunta_actual]
+        bloque = self.bloques_estimulo_sesion[self.indice_pregunta_actual]
         metricas_bloque = self._metricas_de_bloque(bloque["nombre"])
         if metricas_bloque is not None and not math.isnan(metricas_bloque.get("hr_media", float("nan"))):
             subtitulo_metricas = f"HR promedio registrada en este bloque: {metricas_bloque['hr_media']:.1f} bpm"
@@ -1971,7 +2389,7 @@ class AppInvestigador:
             focused_border_color=Colors.PRIMARY,
         )
 
-        progreso = (self.indice_pregunta_actual) / len(BLOQUES_ESTIMULO)
+        progreso = (self.indice_pregunta_actual) / len(self.bloques_estimulo_sesion)
 
         return ft.Container(
             expand=True,
@@ -2012,7 +2430,7 @@ class AppInvestigador:
                                             ft.Text(
                                                 spans=[
                                                     ft.TextSpan(
-                                                        f"ESTÍMULO {self.indice_pregunta_actual + 1} DE {len(BLOQUES_ESTIMULO)}",
+                                                        f"ESTÍMULO {self.indice_pregunta_actual + 1} DE {len(self.bloques_estimulo_sesion)}",
                                                         style=Typography.LABEL,
                                                     )
                                                 ]
@@ -2062,24 +2480,26 @@ class AppInvestigador:
     def _al_guardar_cuestionario(self, e: ft.ControlEvent) -> None:
         """Guarda la respuesta del bloque actual EN MEMORIA (respuestas_cuestionario) y
         avanza. Recién al responder el ÚLTIMO bloque se escribe todo a SQL Server de una
-        sola vez (ver _finalizar_sesion) — así la sesión y sus 4 pruebas quedan
-        consistentes entre sí en vez de ir apareciendo una por una."""
-        bloque = BLOQUES_ESTIMULO[self.indice_pregunta_actual]
+        sola vez (ver _finalizar_sesion) — self.bloques_estimulo_sesion tiene un único
+        elemento (protocolo por día, ver PROTOCOLO POR DÍA en el docstring del módulo),
+        así que en la práctica esto se resuelve en una sola vuelta, pero el loop queda
+        genérico por si algún día se corre un protocolo con más de un estímulo."""
+        bloque = self.bloques_estimulo_sesion[self.indice_pregunta_actual]
         self.respuestas_cuestionario[bloque["nombre"]] = {
             "preferencia": self.chip_preferencia_seleccionado,
             "likert_relajacion": self.likert_relajacion.valor,
             "likert_confort": self.likert_confort.valor,
         }
 
-        if self.indice_pregunta_actual + 1 < len(BLOQUES_ESTIMULO):
+        if self.indice_pregunta_actual + 1 < len(self.bloques_estimulo_sesion):
             self.indice_pregunta_actual += 1
             self._navegar(3)
         else:
             self._finalizar_sesion()
 
     def _finalizar_sesion(self) -> None:
-        """Tras el último cuestionario: guarda sesión + las 4 pruebas en SQL Server y
-        navega a Análisis."""
+        """Tras el último cuestionario: guarda sesión + la prueba de esta sesión en SQL
+        Server y navega a Análisis."""
         participante_id = self.participante_actual["id_participante"]
         id_sesion = self._guardar_en_sql_server(
             participante_id,
@@ -2143,7 +2563,13 @@ class AppInvestigador:
             rmssd_baseline = self._valor_o_none(fila_baseline.iloc[0], "rmssd") if not fila_baseline.empty else None
 
             id_sesion = self.bd.crear_sesion(
-                participante_id, hr_baseline, rmssd_baseline, sdnn_baseline, notas="Registrado desde app_investigador.py"
+                participante_id,
+                hr_baseline,
+                rmssd_baseline,
+                sdnn_baseline,
+                notas="Registrado desde app_investigador.py",
+                usa_vr=self.usar_vr,
+                dia_sesion=self.dia_sesion,
             )
             if id_sesion is None:
                 logger.error("No se pudo crear la fila de sesión en SQL Server.")
@@ -2405,7 +2831,7 @@ class AppInvestigador:
             )
 
         # Color fijo por tipo de estímulo (_COLOR_POR_TIPO_ESTIMULO), no por índice de fila —
-        # así "solfeggio" es siempre indigo sin importar en qué orden lo devuelva el GROUP BY.
+        # así "solfeggio_isocronico" es siempre indigo sin importar en qué orden lo devuelva el GROUP BY.
         # Fallback a TEXT_SECONDARY para cualquier tipo_estimulo que no esté en el mapa (no
         # debería pasar dado _TIPOS_ESTIMULO en bd_sqlserver.py, pero no se rompe si pasa).
         def _color_estimulo(tipo: str) -> str:
@@ -2593,9 +3019,23 @@ class AppInvestigador:
 
     # --- TAB C: Recomendación ---
     def _tab_recomendacion(self) -> ft.Control:
-        """Calcula, para UNA sesión guardada en SQL Server, qué estímulo generó la mejor
-        respuesta de relajación contra su propio baseline — el resultado central de la
-        tesis (ver Recomendador.calcular_score_relajacion() en recomendador.py)."""
+        """Calcula, para UN participante, qué condición generó la mejor respuesta de
+        relajación — el resultado central de la tesis (ver
+        Recomendador.calcular_score_relajacion() en recomendador.py).
+
+        REDISEÑO (ver PROTOCOLO POR DÍA en sesion_completa.py): antes esto comparaba
+        las hasta-4 pruebas de UNA sesión entre sí (diseño viejo: 4 estímulos
+        seguidos en la misma sesión). Ahora cada sesión trae UNA sola prueba (un día,
+        un estímulo) — comparar "dentro de una sesión" ya no tiene sentido, porque no
+        hay nada más con qué comparar ahí adentro. La comparación real ahora es ENTRE
+        LAS SESIONES (días) del mismo participante: se recorren TODAS sus sesiones,
+        se normaliza cada una contra el baseline de ESE MISMO día (nunca contra el de
+        otro día — el HR de reposo puede variar de un día a otro, así que mezclar
+        baselines entre sesiones sería normalizar mal), y se junta todo en un único
+        ranking. Sigue funcionando igual para participantes viejos con una sola
+        sesión de 4 pruebas (ahí las 4 SÍ comparten baseline de verdad, porque son la
+        misma sesión — Recomendador.calcular_score_relajacion() no cambió nada).
+        """
         if self.bd is None:
             return EmptyState(ft.Icons.CLOUD_OFF_OUTLINED, "Sin conexión a SQL Server", "Revisa que el servicio esté corriendo y las credenciales en .env.")
 
@@ -2613,146 +3053,99 @@ class AppInvestigador:
             options=[ft.dropdown.Option(p["id_participante"]) for p in participantes],
             **_forma_dropdown,
         )
-        # contenedor_selector_sesion envuelve el Dropdown de sesión en vez de mutar sus
-        # propiedades (options/disabled) en el mismo control ya montado — bug real
-        # encontrado probando la app: mutar options+disabled de un ft.Dropdown que ya
-        # está en pantalla no siempre refresca su estado interactivo en el cliente (el
-        # menú se queda "trabado" como si siguiera disabled, aunque el valor en Python
-        # ya sea correcto). Mismo patrón que ya usa contenedor_tabla en
-        # _tab_resumen_general(): reemplazar el CONTROL entero, no mutarlo in-place.
-        contenedor_selector_sesion = ft.Container(
-            content=ft.Dropdown(label="Sesión", width=280, options=[], disabled=True, **_forma_dropdown)
-        )
         contenedor_resultado = EmptyState(
-            ft.Icons.RECOMMEND_OUTLINED, "Elegí un participante y una sesión", "El ranking de relajación aparece acá."
+            ft.Icons.RECOMMEND_OUTLINED, "Elegí un participante", "El ranking de relajación entre sus sesiones aparece acá."
         )
-
-        def cargar_sesiones(e: Optional[ft.ControlEvent] = None) -> None:
-            if not selector_participante.value:
-                return
-            try:
-                # SELECT * FROM sesiones WHERE id_participante = ? ORDER BY fecha_hora
-                # (ver BaseDatosTesis.obtener_sesiones_participante) — sin ningún filtro
-                # por preferencia ni por fecha reciente, así que una sesión con
-                # preferencia=NULL en sus pruebas listadas acá igual.
-                sesiones = self.bd.obtener_sesiones_participante(selector_participante.value)
-                logger.debug(
-                    f"obtener_sesiones_participante({selector_participante.value!r}) devolvió "
-                    f"{len(sesiones)} fila(s): {[s['id_sesion'] for s in sesiones]}"
-                )
-            except Exception as error:
-                self._mostrar_snack(SnackBarError(f"Error consultando sesiones: {error}"))
-                return
-
-            # Todo lo que sigue estaba SIN try/except hasta ahora — si algo acá adentro
-            # tiraba (ej. fecha_hora None, obtener_pruebas_sesion fallando de un modo no
-            # previsto), el handler de on_change moría en silencio: Flet no propaga esa
-            # excepción a ningún lado visible, así que el dropdown de Sesión se quedaba
-            # tal cual estaba (disabled=True) sin ningún error en consola ni snackbar —
-            # exactamente el síntoma reportado ("no me deja elegir sesión"). Ahora se
-            # loggea con traceback completo y se avisa con un snackbar si pasa.
-            try:
-                opciones = []
-                for s in sesiones:
-                    # N+1 deliberado: son a lo sumo unas pocas sesiones por participante, y
-                    # esto es lo que permite mostrar "(5:46 min · 4 pruebas)" en vez de solo
-                    # el ID — mismo criterio ya usado para el Timeline de Inicio (ver
-                    # _vista_inicio()).
-                    try:
-                        n_pruebas = len(self.bd.obtener_pruebas_sesion(s["id_sesion"]))
-                    except Exception:
-                        n_pruebas = None
-                    duracion = s.get("duracion_seg")
-                    if duracion:
-                        minutos, segundos = divmod(int(duracion), 60)
-                        duracion_texto = f"{minutos}:{segundos:02d} min"
-                    else:
-                        duracion_texto = "duración N/D"
-                    pruebas_texto = f"{n_pruebas} {'prueba' if n_pruebas == 1 else 'pruebas'}" if n_pruebas is not None else "pruebas N/D"
-                    fecha_texto = s["fecha_hora"].strftime("%d/%m/%Y %H:%M") if s.get("fecha_hora") else "fecha N/D"
-                    etiqueta = f"Sesión {s['id_sesion']} — {fecha_texto} ({duracion_texto} · {pruebas_texto})"
-                    opciones.append(ft.dropdown.Option(str(s["id_sesion"]), etiqueta))
-
-                logger.debug(f"selector_sesion: armadas {len(opciones)} opción(es) para {selector_participante.value!r}")
-                contenedor_selector_sesion.content = ft.Dropdown(
-                    label="Sesión", width=280, options=opciones, disabled=not sesiones, **_forma_dropdown
-                )
-            except Exception as error:
-                logger.exception(f"Error armando las opciones de sesión para {selector_participante.value!r}: {error}")
-                self._mostrar_snack(SnackBarError(f"No se pudo cargar la lista de sesiones: {error}"))
-                return
-
-            self._actualizar_pagina_segura()
 
         def calcular(e: ft.ControlEvent) -> None:
-            # El Dropdown real vive en contenedor_selector_sesion.content — se reemplaza
-            # entero cada vez que cambian las sesiones (ver cargar_sesiones()), así que
-            # hay que leer .value de ESE control, no de una referencia vieja.
-            if not contenedor_selector_sesion.content.value:
-                self._mostrar_snack(SnackBarError("Elige una sesión primero."))
+            if not selector_participante.value:
+                self._mostrar_snack(SnackBarError("Elige un participante primero."))
                 return
             try:
                 import pandas as pd
 
-                id_sesion = int(contenedor_selector_sesion.content.value)
-                sesiones = self.bd.obtener_sesiones_participante(selector_participante.value)
-                sesion = next((s for s in sesiones if s["id_sesion"] == id_sesion), None)
-                pruebas = self.bd.obtener_pruebas_sesion(id_sesion)
-                logger.debug(
-                    f"obtener_pruebas_sesion({id_sesion}) devolvió {len(pruebas)} fila(s): "
-                    f"{[p['tipo_estimulo'] for p in pruebas]}"
-                )
-                if sesion is None or not pruebas:
-                    contenedor_resultado.content = ft.Text("Esta sesión no tiene pruebas registradas.", color=Colors.TEXT_SECONDARY)
+                participante_id = selector_participante.value
+                # SELECT * FROM sesiones WHERE id_participante = ? ORDER BY fecha_hora
+                # (ver BaseDatosTesis.obtener_sesiones_participante) — todas las sesiones
+                # que este participante tenga hasta ahora (1 a 4 de 4 días, o incluso
+                # 1 sola sesión vieja de 4 pruebas), no se filtra por cantidad.
+                sesiones = self.bd.obtener_sesiones_participante(participante_id)
+                if not sesiones:
+                    contenedor_resultado.content = ft.Text(
+                        "Este participante no tiene sesiones registradas.", color=Colors.TEXT_SECONDARY
+                    )
                     self._actualizar_pagina_segura()
                     return
 
-                tabla = pd.DataFrame(
-                    [
-                        {
-                            "condicion": p["tipo_estimulo"],
-                            "hr_media": p.get("hr_promedio"),
-                            "sdnn": p.get("sdnn"),
-                            "rmssd": p.get("rmssd"),
-                            "respiraciones_min": p.get("resp_por_min"),
-                        }
-                        for p in pruebas
-                    ]
-                )
-                # La tabla 'pruebas' nunca guarda una fila "reposo" (el baseline vive aparte,
-                # en sesiones.hr_baseline/sdnn_baseline/rmssd_baseline) — respiraciones_min de
-                # baseline tampoco se guarda, así que queda NaN (Recomendador la excluye del
-                # promedio y redistribuye su peso, ver calcular_score_relajacion()).
-                baseline_reposo = {
-                    "hr_media": sesion.get("hr_baseline"),
-                    "sdnn": sesion.get("sdnn_baseline"),
-                    "rmssd": sesion.get("rmssd_baseline"),
-                    "respiraciones_min": float("nan"),
-                }
+                # N+1 deliberado (una consulta de pruebas por sesión): son a lo sumo 2-3
+                # sesiones por participante bajo el protocolo por día — mismo criterio ya
+                # aceptado en otros lados de esta vista (ver Timeline de Inicio).
+                rankings_por_sesion = []
+                alguna_preferencia = False
+                for sesion in sesiones:
+                    pruebas = self.bd.obtener_pruebas_sesion(sesion["id_sesion"])
+                    if not pruebas:
+                        continue
+                    tabla = pd.DataFrame(
+                        [
+                            {
+                                "condicion": p["tipo_estimulo"],
+                                "hr_media": p.get("hr_promedio"),
+                                "sdnn": p.get("sdnn"),
+                                "rmssd": p.get("rmssd"),
+                                "respiraciones_min": p.get("resp_por_min"),
+                            }
+                            for p in pruebas
+                        ]
+                    )
+                    # La tabla 'pruebas' nunca guarda una fila "reposo" (el baseline vive
+                    # aparte, en sesiones.hr_baseline/sdnn_baseline/rmssd_baseline) — y es
+                    # EL BASELINE DE ESTA SESIÓN PUNTUAL, no uno global del participante.
+                    baseline_reposo = {
+                        "hr_media": sesion.get("hr_baseline"),
+                        "sdnn": sesion.get("sdnn_baseline"),
+                        "rmssd": sesion.get("rmssd_baseline"),
+                        "respiraciones_min": float("nan"),
+                    }
+                    rankings_por_sesion.append(Recomendador().calcular_score_relajacion(tabla, baseline_reposo))
+                    if any(p.get("preferencia") for p in pruebas):
+                        alguna_preferencia = True
 
-                ranking = Recomendador().calcular_score_relajacion(tabla, baseline_reposo)
+                if not rankings_por_sesion:
+                    contenedor_resultado.content = ft.Text(
+                        "Este participante no tiene pruebas registradas en ninguna sesión.", color=Colors.TEXT_SECONDARY
+                    )
+                    self._actualizar_pagina_segura()
+                    return
+
+                # Cada ranking_por_sesion ya viene ordenado desc, pero al juntar varias
+                # sesiones hay que reordenar el conjunto entero — si no, quedaría
+                # ordenado "por sesión" en vez de por score real.
+                ranking = (
+                    pd.concat(rankings_por_sesion, ignore_index=True)
+                    .sort_values("score_relajacion", ascending=False)
+                    .reset_index(drop=True)
+                )
                 # "preferencia" acá es la columna categórica de la pregunta "¿te gustó?"
                 # (me_gusta/neutral/...) — no forma parte del cálculo de score_relajacion
                 # (ese usa solo hr_media/sdnn/rmssd/respiraciones_min, ver Recomendador),
                 # así que nunca puede "romper" el ranking; solo se usa para avisar en la
-                # UI cuándo falta ese dato subjetivo.
-                preferencia_disponible = any(p.get("preferencia") for p in pruebas)
-                contenedor_resultado.content = self._construir_resultado_recomendacion(ranking, preferencia_disponible)
+                # UI cuándo falta ese dato subjetivo en TODAS las sesiones.
+                #
+                # Comparación PRIMARIA (ver H1/H0 en el Anexo 5, página 19): 2 grupos
+                # agrupados — "frecuencias terapéuticas comunes" (Días 1+3 promediados)
+                # vs. "sonidos de preferencia personal" (Días 2+4 promediados). El
+                # ranking por-sesión de más arriba queda como detalle SECUNDARIO (ver
+                # Recomendador.comparar_grupos_terapeutica_vs_preferencia()).
+                comparacion_grupos = Recomendador().comparar_grupos_terapeutica_vs_preferencia(ranking)
+                contenedor_resultado.content = self._construir_resultado_recomendacion(
+                    ranking, alguna_preferencia, comparacion_grupos
+                )
                 self._actualizar_pagina_segura()
             except Exception as error:
                 logger.error(f"Error calculando recomendación: {error}")
                 self._mostrar_snack(SnackBarError(f"No se pudo calcular la recomendación: {error}"))
 
-        # CAUSA REAL del bug "el dropdown de Sesión no deja elegir nada": ft.Dropdown en
-        # Flet 0.86.5 no tiene un evento "on_change" — el real se llama "on_select" (ver
-        # inspect.getsource(ft.Dropdown): on_select/on_text_change/on_focus/on_blur, nada
-        # de on_change). Asignar dropdown.on_change = cargar_sesiones NO tira ningún error
-        # (Python permite setear cualquier atributo en un objeto normal), así que quedaba
-        # completamente silencioso: cargar_sesiones() nunca se ejecutaba al elegir un
-        # participante, el dropdown de Sesión se quedaba para siempre en su estado inicial
-        # (disabled=True, sin opciones) — exactamente lo reportado, sin ningún traceback
-        # ni [CLIENTE FLET] que lo delatara, porque el problema nunca llegó a correr.
-        selector_participante.on_select = cargar_sesiones
         boton_calcular = GradientButton("Calcular recomendación", on_click=calcular, icono=ft.Icons.RECOMMEND_OUTLINED)
 
         return ft.Column(
@@ -2768,12 +3161,15 @@ class AppInvestigador:
                         spacing=Spacing.MD,
                         controls=[
                             ft.Text(
-                                "Compara los 4 estímulos de una sesión contra su propio baseline de reposo y "
-                                "recomienda el que generó mejor respuesta de relajación.",
+                                "Resultado principal: compara los 2 grupos de la hipótesis del Anexo 5 — "
+                                "frecuencias terapéuticas comunes (Días 1+3) vs. sonidos de preferencia "
+                                "personal (Días 2+4) — cada sesión normalizada contra el baseline de SU "
+                                "PROPIO día antes de promediar. Más abajo queda, como detalle secundario, "
+                                "el ranking sesión por sesión.",
                                 size=12,
                                 color=Colors.TEXT_SECONDARY,
                             ),
-                            ft.Row(spacing=Spacing.SM, controls=[selector_participante, contenedor_selector_sesion, boton_calcular]),
+                            ft.Row(spacing=Spacing.SM, controls=[selector_participante, boton_calcular]),
                         ],
                     ),
                 ),
@@ -2781,8 +3177,12 @@ class AppInvestigador:
             ],
         )
 
-    def _construir_resultado_recomendacion(self, ranking, preferencia_disponible: bool = True) -> ft.Control:
-        """Arma la tarjeta destacada del recomendado + la tabla de ranking completa.
+    def _construir_resultado_recomendacion(
+        self, ranking, preferencia_disponible: bool = True, comparacion_grupos: Optional[dict] = None
+    ) -> ft.Control:
+        """Arma el resultado de la pestaña Recomendación: tarjeta PRIMARIA de la
+        comparación de 2 grupos (H1/H0) + detalle SECUNDARIO (tarjeta del mejor
+        estímulo individual y tabla de ranking sesión por sesión).
 
         Args:
             ranking: DataFrame devuelto por Recomendador.calcular_score_relajacion()
@@ -2792,6 +3192,10 @@ class AppInvestigador:
                 cuestionario post-sesión no se completó. El ranking se calcula
                 exactamente igual en ambos casos (preferencia no participa de
                 score_relajacion, ver calcular()); esto solo cambia un aviso en la UI.
+            comparacion_grupos: dict de Recomendador.comparar_grupos_terapeutica_vs_preferencia()
+                ({"terapeuticas": {...} | None, "preferencia": {...} | None}) — el
+                resultado central de la tesis (Anexo 5, H1/H0). None si no se calculó
+                (compatibilidad hacia atrás, no debería pasar desde calcular()).
         """
         import pandas as pd
 
@@ -2895,21 +3299,138 @@ class AppInvestigador:
             ],
         )
 
-        return ft.Column(
-            spacing=Spacing.MD,
-            controls=[
-                tarjeta_recomendado,
-                ft.Container(
-                    padding=ft.padding.Padding.all(Spacing.LG),
-                    border_radius=Radius.CARD,
-                    bgcolor=Colors.BG_CARD,
-                    shadow=Shadows.SM,
-                    content=ft.Column(
-                        spacing=Spacing.SM,
-                        controls=[ft.Text("Ranking completo", size=14, weight=ft.FontWeight.W_600), tabla_ranking],
-                    ),
+        controles = []
+        if comparacion_grupos is not None:
+            controles.append(self._construir_tarjeta_comparacion_grupos(comparacion_grupos))
+        controles.append(
+            ft.Text("Detalle secundario por sesión", size=13, weight=ft.FontWeight.W_600, color=Colors.TEXT_SECONDARY)
+        )
+        controles.append(tarjeta_recomendado)
+        controles.append(
+            ft.Container(
+                padding=ft.padding.Padding.all(Spacing.LG),
+                border_radius=Radius.CARD,
+                bgcolor=Colors.BG_CARD,
+                shadow=Shadows.SM,
+                content=ft.Column(
+                    spacing=Spacing.SM,
+                    controls=[ft.Text("Ranking completo (por sesión)", size=14, weight=ft.FontWeight.W_600), tabla_ranking],
                 ),
-            ],
+            )
+        )
+
+        return ft.Column(spacing=Spacing.MD, controls=controles)
+
+    def _construir_tarjeta_comparacion_grupos(self, comparacion_grupos: dict) -> ft.Control:
+        """Tarjeta PRIMARIA de la pestaña Recomendación: compara los 2 grupos de la
+        hipótesis del Anexo 5 (página 19) — frecuencias terapéuticas comunes (Días 1+3
+        promediados) vs. sonidos de preferencia personal (Días 2+4 promediados). Ver
+        Recomendador.comparar_grupos_terapeutica_vs_preferencia().
+
+        Con un solo participante y protocolo incompleto (todavía no tiene sus 4
+        sesiones) uno de los 2 grupos puede venir en None — se avisa en vez de
+        comparar a medias.
+        """
+        terapeuticas = comparacion_grupos.get("terapeuticas")
+        preferencia = comparacion_grupos.get("preferencia")
+
+        if terapeuticas is None or preferencia is None:
+            faltante = "terapéuticas (Días 1/3)" if terapeuticas is None else "de preferencia (Días 2/4)"
+            return ft.Container(
+                padding=ft.padding.Padding.all(Spacing.LG),
+                border_radius=Radius.CARD,
+                bgcolor=ft.Colors.with_opacity(0.08, Colors.WARNING),
+                content=ft.Text(
+                    f"Todavía no hay sesiones {faltante} registradas para este participante — la comparación "
+                    "de 2 grupos (resultado principal de la tesis) necesita al menos una sesión de cada tipo.",
+                    color=Colors.WARNING,
+                ),
+            )
+
+        score_terapeuticas = terapeuticas["score_relajacion"]
+        score_preferencia = preferencia["score_relajacion"]
+        if score_terapeuticas > score_preferencia:
+            grupo_ganador, texto_ganador = "terapeuticas", "Frecuencias terapéuticas comunes"
+        elif score_preferencia > score_terapeuticas:
+            grupo_ganador, texto_ganador = "preferencia", "Sonidos de preferencia personal"
+        else:
+            grupo_ganador, texto_ganador = None, "Empate"
+
+        def _columna_grupo(titulo: str, datos: dict, es_ganador: bool) -> ft.Control:
+            return ft.Container(
+                expand=True,
+                padding=ft.padding.Padding.all(Spacing.MD),
+                border_radius=Radius.INPUT,
+                bgcolor=ft.Colors.with_opacity(0.12 if es_ganador else 0.04, Colors.SUCCESS if es_ganador else Colors.TEXT_SECONDARY),
+                border=ft.border.Border.all(1, ft.Colors.with_opacity(0.3, Colors.SUCCESS)) if es_ganador else None,
+                content=ft.Column(
+                    spacing=Spacing.XS,
+                    controls=[
+                        ft.Text(titulo, size=12, weight=ft.FontWeight.W_600, color=Colors.TEXT_SECONDARY),
+                        ft.Text(
+                            f"{datos['score_relajacion']:.3f}",
+                            size=24,
+                            weight=ft.FontWeight.W_800,
+                            color=Colors.SUCCESS if es_ganador else Colors.TEXT_PRIMARY,
+                        ),
+                        ft.Text(f"n = {datos['n_sesiones']} sesión(es)", size=11, color=Colors.TEXT_SECONDARY),
+                        ft.Text(
+                            f"HR {datos['hr_media']:.1f} · SDNN {datos['sdnn']:.2f} · RMSSD {datos['rmssd']:.2f}",
+                            size=11,
+                            color=Colors.TEXT_SECONDARY,
+                        ),
+                    ],
+                ),
+            )
+
+        return ft.Container(
+            padding=ft.padding.Padding.all(Spacing.XL),
+            border_radius=Radius.CARD,
+            gradient=ft.LinearGradient(
+                colors=[ft.Colors.with_opacity(0.12, Colors.PRIMARY), ft.Colors.with_opacity(0.03, Colors.PRIMARY)],
+                begin=ft.alignment.Alignment.TOP_LEFT,
+                end=ft.alignment.Alignment.BOTTOM_RIGHT,
+            ),
+            border=ft.border.Border.all(1, ft.Colors.with_opacity(0.25, Colors.PRIMARY)),
+            shadow=Shadows.MD,
+            content=ft.Column(
+                spacing=Spacing.MD,
+                controls=[
+                    ft.Row(
+                        spacing=Spacing.SM,
+                        controls=[
+                            IconCircle(ft.Icons.SCIENCE_OUTLINED, ft.Colors.with_opacity(0.16, Colors.PRIMARY), Colors.PRIMARY, tamaño=40),
+                            ft.Column(
+                                spacing=0,
+                                controls=[
+                                    ft.Text("RESULTADO PRINCIPAL — H1/H0 (Anexo 5)", style=Typography.LABEL),
+                                    ft.Text(
+                                        f"{texto_ganador} generó mayor relajación" if grupo_ganador else "Ambos grupos generaron relajación equivalente",
+                                        size=16,
+                                        weight=ft.FontWeight.W_700,
+                                        color=Colors.TEXT_PRIMARY,
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                    ft.Row(
+                        spacing=Spacing.MD,
+                        controls=[
+                            _columna_grupo("Frecuencias terapéuticas (Días 1+3)", terapeuticas, grupo_ganador == "terapeuticas"),
+                            _columna_grupo("Preferencia personal (Días 2+4)", preferencia, grupo_ganador == "preferencia"),
+                        ],
+                    ),
+                    ft.Text(
+                        "Score de relajación promediado por grupo (cada sesión ya normalizada contra el "
+                        "baseline de su propio día antes de promediar). Con protocolo completo (4 sesiones) "
+                        "cada grupo trae n=2.",
+                        size=11,
+                        color=Colors.TEXT_SECONDARY,
+                        italic=True,
+                    ),
+                ],
+            ),
         )
 
     # --- TAB D: Consulta SQL ---

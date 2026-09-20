@@ -1,9 +1,22 @@
-"""Algoritmo de recomendación post-sesión: qué estímulo relajó más a cada participante.
+"""Algoritmo de recomendación post-sesión: cómo reaccionó cada participante ante
+frecuencias terapéuticas comunes vs. sonidos de preferencia personal.
 
-Objetivo central de la tesis: al terminar la sesión, recomendar al
-participante el estímulo (Solfeggio, binaural, isocrónico o su preferencia
-personal) que le produjo la MEJOR respuesta fisiológica de relajación,
-comparado contra su propio reposo basal.
+Objetivo central de la tesis (ver Hipótesis H1/H0, Capítulo I del documento):
+comparar la respuesta fisiológica de relajación entre DOS GRUPOS — "frecuencias
+terapéuticas comunes" (binaural/solfeggio-isocrónico/paisaje, sorteados en Día 1
+y Día 3) y "sonidos de preferencia personal" (Día 2 y Día 4, dos canciones
+distintas) — no un ranking de cuál tipo específico individual "ganó". Ver
+comparar_grupos_terapeutica_vs_preferencia() para esa comparación de 2 grupos, que
+es el resultado descriptivo por participante. El contraste ESTADÍSTICO de
+H1/H0 entre participantes (ΔFC respecto al baseline, prueba pareada) está en
+analisis_intrasujeto.py.
+
+calcular_score_relajacion() sigue existiendo tal cual y sigue siendo útil como
+detalle de respaldo por sesión (ver _tab_recomendacion() en app_investigador.py y
+reporte_pdf.py: se muestra como "detalle por sesión", no como el resultado
+principal) — comparar_grupos_terapeutica_vs_preferencia() se construye ENCIMA de
+ese ranking ya calculado, agrupando y promediando, nunca mezclando HR crudo de
+sesiones con baselines distintos.
 
 Reutiliza AnalisisGrupal.calcular_metricas_participante() (ver
 analisis_grupal.py) para no duplicar las fórmulas de HR/HRV — este módulo
@@ -113,7 +126,12 @@ class Recomendador:
         Returns:
             pd.DataFrame: condicion, hr_media, sdnn, rmssd,
                 respiraciones_min, score_relajacion — ordenado por
-                score_relajacion descendente.
+                score_relajacion descendente. OJO: las columnas de métricas
+                (hr_media, sdnn, rmssd, respiraciones_min) conservan los
+                valores CRUDOS (bpm, ms); solo score_relajacion está
+                normalizado contra el baseline. Para el contraste de H1/H0
+                (ΔFC en bpm respecto al baseline de cada sesión) NO usar
+                estas columnas: usar analisis_intrasujeto.py.
         """
         resultado = metricas_por_condicion.copy()
         columnas_metricas = ["hr_media", "sdnn", "rmssd", "respiraciones_min"]
@@ -159,6 +177,61 @@ class Recomendador:
         ).reset_index(drop=True)
 
         return resultado
+
+    def comparar_grupos_terapeutica_vs_preferencia(self, ranking: pd.DataFrame) -> dict:
+        """Agrupa un ranking YA calculado por calcular_score_relajacion() (una fila
+        por sesión, cada una normalizada contra el baseline de SU PROPIO día) en los
+        2 grupos que compara la Hipótesis de la tesis (H1/H0): "terapéuticas"
+        (cualquier condición que no sea "preferencia" — los 3 tipos estandarizados
+        sorteados en Día 1/Día 3, ver TIPOS_ESTANDARIZADOS en sesion_completa.py) vs
+        "preferencia" (Día 2 y Día 4 — dos canciones distintas, pero UNA sola
+        categoría para esta comparación: no importa cuál canción específica, lo que
+        se evalúa es "cómo reacciona ante su música preferida").
+
+        Promedia las métricas de cada sesión DENTRO de su grupo. Solo
+        score_relajacion está normalizado contra el baseline de cada sesión
+        (fracción relativa al propio reposo, así que promediarlo entre sesiones
+        es válido). hr_media, sdnn, rmssd y respiraciones_min quedan en valores
+        CRUDOS (bpm, ms): su promedio por grupo es descriptivo para la tarjeta de
+        la app y NO es el contraste de H1/H0, porque mezcla sesiones con
+        baselines distintos. El contraste estadístico (ΔFC = FC del estímulo -
+        FC del baseline de la misma sesión, prueba pareada entre participantes)
+        vive en analisis_intrasujeto.py.
+
+        Args:
+            ranking: DataFrame devuelto por calcular_score_relajacion() — una fila
+                por sesión/condición, columnas condicion/hr_media/sdnn/rmssd/
+                respiraciones_min/score_relajacion.
+
+        Returns:
+            dict: {"terapeuticas": {...} | None, "preferencia": {...} | None}.
+                Cada sub-dict trae n_sesiones (int) y el promedio de hr_media/sdnn/
+                rmssd/respiraciones_min/score_relajacion sobre las sesiones válidas
+                de ese grupo. None si ese grupo no tiene ninguna sesión con
+                score_relajacion válido todavía (ej. solo se corrió Día 1 hasta
+                ahora, sin ningún día de preferencia).
+        """
+        if ranking.empty:
+            return {"terapeuticas": None, "preferencia": None}
+
+        columnas_metricas = ["hr_media", "sdnn", "rmssd", "respiraciones_min", "score_relajacion"]
+        validas = ranking[ranking["score_relajacion"].notna()]
+
+        def _resumen(subconjunto: pd.DataFrame) -> Optional[dict]:
+            if subconjunto.empty:
+                return None
+            resumen = {"n_sesiones": int(len(subconjunto))}
+            for columna in columnas_metricas:
+                resumen[columna] = float(subconjunto[columna].mean(skipna=True))
+            return resumen
+
+        grupo_preferencia = validas[validas["condicion"] == "preferencia"]
+        grupo_terapeuticas = validas[validas["condicion"] != "preferencia"]
+
+        return {
+            "terapeuticas": _resumen(grupo_terapeuticas),
+            "preferencia": _resumen(grupo_preferencia),
+        }
 
     def recomendar_para_participante(self, df_sesion: pd.DataFrame, participante_id: str) -> dict:
         """Calcula la recomendación de estímulo para UN participante.

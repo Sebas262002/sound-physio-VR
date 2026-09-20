@@ -57,7 +57,7 @@ Si tienes sesiones de `datos/sesiones/*.csv` de antes de tener SQL Server integr
 python C:/Tesis_Kevin/python/database/migrar_csv_a_sqlserver.py
 ```
 
-**Antes de correrlo en serio:** edita `DEMOGRAFIA_PARTICIPANTES` al inicio de `migrar_csv_a_sqlserver.py` con la edad/género/mano dominante real de cada participante — los CSV nunca capturaron esos datos, así que sin completarlos quedan en `NULL` (con una observación que lo deja explícito, no se inventan valores).
+**Antes de correrlo en serio:** edita `DEMOGRAFIA_PARTICIPANTES` al inicio de `migrar_csv_a_sqlserver.py` con la edad/género real de cada participante — los CSV nunca capturaron esos datos, así que sin completarlos quedan en `NULL` (con una observación que lo deja explícito, no se inventan valores).
 
 ## Uso normal (integrado en `sesion_completa.py`)
 

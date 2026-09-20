@@ -1,14 +1,17 @@
-"""Test de regresión de la integración VR: valida el protocolo REAL de 9 bloques.
+"""Test de regresión de la integración VR: valida el protocolo REAL de un día
+(3 bloques: baseline -> un estímulo -> cierre, ver PROTOCOLO POR DÍA en
+sesion_completa.py).
 
 A diferencia de la primera versión de este script (que usaba un protocolo de
 3 bloques con nombres de skybox inventados, independientes del código real),
-esta versión llama a obtener_protocolo_tesis_final(usar_vr=True) de verdad —
-la misma función que usa la app en producción — con duraciones cortas para
-que la corrida entera tome ~25s en vez de los ~7.5 min del protocolo de
-tesis real. La secuencia esperada de mensajes OSC se DERIVA de esa llamada
-(que a su vez usa _AMBIENTE_VR_POR_BLOQUE, importado acá solo para trazar el
-mapeo en el output — no se hardcodea ningún nombre de skybox en este
-archivo): si el mapeo cambia mañana, este test lo detecta solo.
+esta versión llama a obtener_protocolo_sesion_dia(TIPO_ESTIMULO_PRUEBA,
+usar_vr=True) de verdad — la misma función que usa la app en producción —
+con duraciones cortas para que la corrida entera tome unos pocos segundos en
+vez de los ~8-9 min del protocolo de tesis real. La secuencia esperada de
+mensajes OSC se DERIVA de esa llamada (que a su vez usa
+_AMBIENTE_VR_POR_BLOQUE, importado acá solo para trazar el mapeo en el
+output — no se hardcodea ningún nombre de skybox en este archivo): si el
+mapeo cambia mañana, este test lo detecta solo.
 
 Levanta un "Unity falso" (servidor OSC en 127.0.0.1:8000) y corre
 ejecutar_sesion_completa() de verdad (sensor simulado, sin audio real, sin
@@ -35,21 +38,24 @@ from sesion_completa import _AMBIENTE_VR_POR_BLOQUE  # noqa: E402
 
 ID_PARTICIPANTE_PRUEBA = "P_TEST_VR_SESION"
 
-# Duraciones cortas: 3+2s en vez de 60+30s — mismos 9 bloques del protocolo
-# real de tesis (baseline, 4 estímulos, 3 descansos, cierre), corriendo en
-# ~25s en vez de ~7.5 min. Nada de esto toca duracion_estimulo_seg/etc. por
-# defecto de obtener_protocolo_tesis_final() en producción — son argumentos
-# explícitos, solo para esta corrida de prueba.
+# Uno cualquiera de TIPOS_ESTANDARIZADOS (ver sesion_completa.py) — no importa
+# cuál para este test, solo que exista en _AMBIENTE_VR_POR_BLOQUE.
+TIPO_ESTIMULO_PRUEBA = "binaural_theta"
+
+# Duraciones cortas: 3s en vez de 120s/300s — mismos 3 bloques del protocolo
+# real de un día (baseline, un estímulo, cierre), corriendo en unos segundos
+# en vez de los ~8-9 min reales. Nada de esto toca los defaults de
+# obtener_protocolo_sesion_dia() en producción — son argumentos explícitos,
+# solo para esta corrida de prueba.
 DURACION_BASELINE_PRUEBA = 3
 DURACION_ESTIMULO_PRUEBA = 3
-DURACION_DESCANSO_PRUEBA = 2
 DURACION_CIERRE_PRUEBA = 3
 
 
 def _mensajes_esperados(protocolo: list) -> list:
     """Deriva la secuencia esperada de mensajes OSC (dirección, args) a partir
-    del protocolo YA RESUELTO por obtener_protocolo_tesis_final(usar_vr=True)
-    — no reimplementa la regla de herencia de descansos, solo lee
+    del protocolo YA RESUELTO por obtener_protocolo_sesion_dia(usar_vr=True)
+    — no reimplementa la regla de herencia de ambiente entre bloques, solo lee
     "ambiente_vr" bloque por bloque y deduplica valores consecutivos (mismo
     criterio que _hilo_observador_vr en sesion_completa.py: un descanso que
     hereda el mismo skybox del bloque anterior no genera un /ambiente nuevo).
@@ -86,15 +92,15 @@ def main() -> int:
     hilo_unity.start()
     time.sleep(0.3)
 
-    protocolo = sc.obtener_protocolo_tesis_final(
+    protocolo = sc.obtener_protocolo_sesion_dia(
+        TIPO_ESTIMULO_PRUEBA,
         duracion_baseline_seg=DURACION_BASELINE_PRUEBA,
         duracion_estimulo_seg=DURACION_ESTIMULO_PRUEBA,
-        duracion_descanso_seg=DURACION_DESCANSO_PRUEBA,
         duracion_cierre_seg=DURACION_CIERRE_PRUEBA,
         usar_vr=True,
     )
     duracion_estimada = sc._calcular_duracion_total_protocolo(protocolo)
-    print(f"=== Protocolo real de {len(protocolo)} bloques, ~{duracion_estimada:.0f}s ===\n")
+    print(f"=== Protocolo real de {len(protocolo)} bloques ('{TIPO_ESTIMULO_PRUEBA}'), ~{duracion_estimada:.0f}s ===\n")
 
     esperados = _mensajes_esperados(protocolo)
 

@@ -503,7 +503,14 @@ class ReproductorEstimulos:
         Raises:
             FileNotFoundError: Si no hay ningún WAV que coincida.
         """
-        coincidencias = sorted(Path(carpeta).glob(f"*{patron}*.wav"))
+        # patron="" (ej. paisaje_biofilico, con un solo archivo en su carpeta, o
+        # "solfeggio" sin sufijo "NNNHz" detectado) arma "**.wav" con el f-string de
+        # abajo — error real encontrado en pruebas: pathlib rechaza "**" combinado con
+        # otros caracteres en el mismo componente ("Invalid pattern: '**' can only be
+        # an entire path component"). Con patron vacío no hay nada que filtrar, así
+        # que se usa "*.wav" directo en vez de construir el "**" accidental.
+        patron_glob = "*.wav" if not patron else f"*{patron}*.wav"
+        coincidencias = sorted(Path(carpeta).glob(patron_glob))
         if not coincidencias:
             raise FileNotFoundError(
                 f"No se encontró ningún WAV con '{patron}' en {carpeta}. "
@@ -518,18 +525,30 @@ class ReproductorEstimulos:
         duracion_silencio_seg: int = 60,
         duracion_descanso_seg: int = 30,
     ) -> list[dict]:
-        """Arma el protocolo experimental de referencia de la tesis.
+        """Arma un protocolo de EJEMPLO de 4 bloques de estímulo — YA NO es el
+        protocolo real de la tesis (ver PROTOCOLO POR DÍA en sesion_completa.py:
+        ahora es un solo estímulo por sesión, uno por día). Este método
+        sobrevivió la limpieza de Fase 2 solo porque ejecutar_sesion_completa()
+        todavía lo usa internamente para protocolo_corto=True (pruebas rápidas
+        de humo, ver ese código) — apuntando SIEMPRE a una carpeta temporal
+        autogenerada ahí mismo, nunca a audio_estimulos/ real.
 
         Baseline (silencio) → Solfeggio 528Hz → descanso → Binaural Alpha →
         descanso → Isocrónico Alpha → descanso → preferencia personal
         (si se indica) → cierre (silencio).
 
         Los WAV de Solfeggio/Binaural/Isocrónico se buscan dentro de
-        carpeta_estimulos/solfeggio/, /binaurales/ e /isocronicos/
-        (la misma estructura que genera generador_tonos.py).
+        carpeta_estimulos/solfeggio/, /binaurales/ e /isocronicos/ — para que
+        esto funcione, carpeta_estimulos tiene que tener esa estructura con
+        WAV de verdad adentro (protocolo_corto=True se encarga de generarla
+        como carpeta temporal antes de llamar acá; NO uses esto apuntando a
+        audio_estimulos/ real, esas subcarpetas /solfeggio/ e /isocronicos/
+        ya no existen ahí).
 
         Args:
-            carpeta_estimulos: Carpeta raíz de audio_estimulos/.
+            carpeta_estimulos: Carpeta con la estructura /solfeggio/,
+                /binaurales/, /isocronicos/ ya generada (ver arriba — NO es
+                audio_estimulos/ real).
             preferencia_wav: Ruta a la canción/estímulo de preferencia
                 personal del participante. Si es None, ese bloque se omite.
             duracion_silencio_seg: Duración de baseline y cierre, en

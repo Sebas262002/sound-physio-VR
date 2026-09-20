@@ -40,13 +40,39 @@ ESQUEMA DE LA BASE (ya creado en SQL Server, este módulo no lo modifica):
 
     participantes:
         id_participante VARCHAR(10) PK, edad INT NULL, genero VARCHAR(10) NULL,
-        mano_dominante VARCHAR(1) NULL, fecha_registro DATETIME NOT NULL,
-        consentimiento BIT NULL, observaciones VARCHAR(500) NULL
+        fecha_registro DATETIME NOT NULL,
+        consentimiento BIT NULL, observaciones VARCHAR(500) NULL,
+        ruta_preferencia_wav NVARCHAR(500) NULL,
+        ruta_preferencia_wav_2 NVARCHAR(500) NULL
+
+        NOTA: ruta_preferencia_wav se agregó para precargar el Día 2 de un
+        participante que ya hizo Día 1 (ver actualizar_ruta_preferencia() y
+        _autocompletar_participante_existente() en app_investigador.py).
+        ruta_preferencia_wav_2 se agregó después, para el Día 4 (ver
+        PROTOCOLO EXPERIMENTAL FINAL en sesion_completa.py: Días 2 y 4 son
+        ambos de preferencia personal, pero con una canción DISTINTA cada
+        uno — ver actualizar_ruta_preferencia_2()). Si tu SQL Server
+        todavía no tiene estas columnas, correr una sola vez:
+
+            ALTER TABLE participantes ADD ruta_preferencia_wav NVARCHAR(500) NULL;
+            ALTER TABLE participantes ADD ruta_preferencia_wav_2 NVARCHAR(500) NULL;
+
+        mano_dominante EXISTIÓ y se ELIMINÓ (a pedido explícito del tutor: no
+        aportaba nada al análisis de la tesis, ver Hipótesis H1/H0). Si tu SQL
+        Server todavía tiene esa columna de una versión vieja, correr una vez:
+
+            ALTER TABLE participantes DROP COLUMN mano_dominante;
 
     sesiones:
         id_sesion INT IDENTITY PK, id_participante VARCHAR(10) FK NOT NULL,
         fecha_hora DATETIME NOT NULL, duracion_seg INT NULL,
-        hr_baseline/rmssd_baseline/sdnn_baseline FLOAT NULL, notas VARCHAR(500) NULL
+        hr_baseline/rmssd_baseline/sdnn_baseline FLOAT NULL, notas VARCHAR(500) NULL,
+        usa_vr BIT NOT NULL DEFAULT 0,
+        dia_sesion INT NULL (1-4 del protocolo), valida BIT NOT NULL DEFAULT 1
+        (0 = sesión descartada del análisis, ver marcar_sesion_invalida()).
+        Si tu SQL Server todavía no tiene dia_sesion/valida, correr una sola vez
+        database/migrar_agregar_dia_valida.py (crear_sesion() sigue funcionando
+        sin ellas: solo deja de guardar el día).
 
     pruebas:
         id_prueba INT IDENTITY PK, id_sesion INT FK NOT NULL,
@@ -84,10 +110,14 @@ logger = logging.getLogger(__name__)
 RUTA_ENV_DEFAULT = Path(r"C:\Tesis_Kevin\.env")
 
 # Mapeo banda de frecuencia -> Hz nominal, usado cuando el nombre del bloque
-# no trae el número explícito (ej. "binaural_alpha" en vez de "binaural_10Hz_alpha") —
+# no trae el número explícito (ej. "binaural_theta" en vez de "binaural_6Hz_theta") —
 # coincide con las frecuencias reales generadas por generador_tonos.py.
 _BANDA_A_HZ = {"delta": 3.0, "theta": 6.0, "alpha": 10.0, "beta": 20.0, "gamma": 40.0}
-_TIPOS_ESTIMULO = ("solfeggio", "binaural", "isocronico", "preferencia")
+# Orden IMPORTA: next() en mapear_bloque_a_prueba() devuelve el primer match,
+# así que los tipos compuestos ("solfeggio_isocronico", que contiene la
+# substring "solfeggio") deben ir ANTES que su tipo genérico, si no
+# "solfeggio_isocronico_528Hz" se etiquetaría como "solfeggio" a secas.
+_TIPOS_ESTIMULO = ("solfeggio_isocronico", "paisaje", "solfeggio", "binaural", "isocronico", "preferencia")
 
 
 def _limpiar_valor(valor: Any) -> Any:
@@ -125,16 +155,20 @@ def mapear_bloque_a_prueba(nombre_bloque: str) -> Optional[dict]:
 
     Args:
         nombre_bloque: Nombre del bloque tal como aparece en el protocolo
-            (ver sesion_completa.py, obtener_protocolo_tesis_final()), ej.
-            "solfeggio_528Hz", "binaural_alpha", "preferencia".
+            (ver sesion_completa.py, obtener_protocolo_sesion_dia()), ej.
+            "binaural_theta", "solfeggio_isocronico_528Hz",
+            "paisaje_biofilico", "preferencia".
 
     Returns:
         Optional[dict]: {"tipo_estimulo": str, "frecuencia_hz": Optional[float]}
-            si el bloque es un estímulo reconocido (solfeggio/binaural/
-            isocronico/preferencia); None si es un bloque de reposo/
-            silencio (baseline, descansoN, cierre, estabilizacion) — esos
-            no van a la tabla "pruebas", solo se usan para el baseline de
-            "sesiones".
+            si el bloque es un estímulo reconocido (solfeggio_isocronico/
+            paisaje/solfeggio/binaural/isocronico/preferencia — ver
+            _TIPOS_ESTIMULO); None si es un bloque de reposo/silencio
+            (baseline, descansoN, cierre, estabilizacion) — esos no van a
+            la tabla "pruebas", solo se usan para el baseline de
+            "sesiones". Para "paisaje_biofilico", frecuencia_hz siempre
+            queda en None: es ruido filtrado, no tiene una única
+            frecuencia portadora que reportar.
     """
     nombre_normalizado = nombre_bloque.lower()
     tipo_estimulo = next((tipo for tipo in _TIPOS_ESTIMULO if tipo in nombre_normalizado), None)
@@ -189,6 +223,8 @@ class BaseDatosTesis:
         self.driver = os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server")
         self.max_reintentos = max_reintentos
         self.conexion: Optional[pyodbc.Connection] = None
+        # None = todavía no consultado; ver _sesiones_tiene_dia_valida()
+        self._sesiones_con_dia_valida: Optional[bool] = None
 
         if not all([self.server, self.database, self.usuario, self.password]):
             logger.warning(
@@ -311,7 +347,6 @@ class BaseDatosTesis:
         id_participante: str,
         edad: Optional[int],
         genero: Optional[str],
-        mano_dominante: Optional[str],
         observaciones: str = "",
         consentimiento: bool = True,
     ) -> bool:
@@ -321,7 +356,6 @@ class BaseDatosTesis:
             id_participante: Identificador del participante, ej. "P001".
             edad: Edad en años. None si no se conoce (columna nullable).
             genero: Género autoreportado. None si no se conoce.
-            mano_dominante: "D" o "I". None si no se conoce.
             observaciones: Notas libres (máx. 500 caracteres en la tabla).
             consentimiento: Si el participante dio consentimiento informado
                 (default True — se asume que solo se llega a este método
@@ -342,16 +376,39 @@ class BaseDatosTesis:
             self._ejecutar(
                 """
                 INSERT INTO participantes
-                    (id_participante, edad, genero, mano_dominante, fecha_registro, consentimiento, observaciones)
-                VALUES (?, ?, ?, ?, GETDATE(), ?, ?)
+                    (id_participante, edad, genero, fecha_registro, consentimiento, observaciones)
+                VALUES (?, ?, ?, GETDATE(), ?, ?)
                 """,
-                (id_participante, edad, genero, mano_dominante, consentimiento, observaciones or None),
+                (id_participante, edad, genero, consentimiento, observaciones or None),
             )
             logger.info(f"Participante {id_participante} registrado.")
             return True
         except (pyodbc.Error, ConnectionError) as error:
             logger.error(f"No se pudo registrar al participante {id_participante}: {error}")
             return False
+
+    def _sesiones_tiene_dia_valida(self) -> bool:
+        """Indica si 'sesiones' ya tiene las columnas dia_sesion y valida (una consulta, luego cacheado).
+
+        Permite que crear_sesion() siga funcionando en una base que todavía no
+        corrió database/migrar_agregar_dia_valida.py, en vez de fallar en plena
+        captura con un participante frente al equipo.
+
+        Returns:
+            bool: True si ambas columnas existen; False si falta alguna o la
+                consulta falla.
+        """
+        if self._sesiones_con_dia_valida is None:
+            try:
+                filas = self._ejecutar(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                    "WHERE TABLE_NAME = 'sesiones' AND COLUMN_NAME IN ('dia_sesion', 'valida')"
+                )
+                self._sesiones_con_dia_valida = len(filas or []) == 2
+            except (pyodbc.Error, ConnectionError) as error:
+                logger.warning(f"No se pudo consultar las columnas de 'sesiones': {error}")
+                return False
+        return self._sesiones_con_dia_valida
 
     def crear_sesion(
         self,
@@ -361,6 +418,8 @@ class BaseDatosTesis:
         sdnn_baseline: Optional[float],
         notas: str = "",
         usa_vr: bool = False,
+        dia_sesion: Optional[int] = None,
+        valida: bool = True,
     ) -> Optional[int]:
         """Crea la fila de una nueva sesión y devuelve su id generado.
 
@@ -374,33 +433,154 @@ class BaseDatosTesis:
             usa_vr: Si la sesión corrió con Meta Quest 2 (ver usar_vr en
                 ejecutar_sesion_completa(), sesion_completa.py) — puramente
                 informativo, no afecta ninguna métrica.
+            dia_sesion: Día del protocolo (1 a 4). None si no se conoce. Se
+                ignora (con una advertencia) si la tabla aún no tiene la
+                columna — ver database/migrar_agregar_dia_valida.py.
+            valida: False si la sesión nace descartada del análisis (p. ej. se
+                sabe de antemano que la señal falló). Lo normal es True y
+                marcarla después con marcar_sesion_invalida().
 
         Returns:
             Optional[int]: id_sesion (IDENTITY) generado por SQL Server,
                 o None si falló la inserción.
         """
         try:
-            filas = self._ejecutar(
-                """
-                INSERT INTO sesiones (id_participante, fecha_hora, hr_baseline, rmssd_baseline, sdnn_baseline, notas, usa_vr)
-                OUTPUT INSERTED.id_sesion
-                VALUES (?, GETDATE(), ?, ?, ?, ?, ?)
-                """,
-                (
-                    id_participante,
-                    _limpiar_valor(hr_baseline),
-                    _limpiar_valor(rmssd_baseline),
-                    _limpiar_valor(sdnn_baseline),
-                    notas or None,
-                    usa_vr,
-                ),
-            )
+            if self._sesiones_tiene_dia_valida():
+                filas = self._ejecutar(
+                    """
+                    INSERT INTO sesiones
+                        (id_participante, fecha_hora, hr_baseline, rmssd_baseline, sdnn_baseline, notas, usa_vr, dia_sesion, valida)
+                    OUTPUT INSERTED.id_sesion
+                    VALUES (?, GETDATE(), ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        id_participante,
+                        _limpiar_valor(hr_baseline),
+                        _limpiar_valor(rmssd_baseline),
+                        _limpiar_valor(sdnn_baseline),
+                        notas or None,
+                        usa_vr,
+                        dia_sesion,
+                        valida,
+                    ),
+                )
+            else:
+                if dia_sesion is not None:
+                    logger.warning(
+                        "La tabla 'sesiones' no tiene dia_sesion/valida: el día no se guarda. "
+                        "Correr database/migrar_agregar_dia_valida.py."
+                    )
+                filas = self._ejecutar(
+                    """
+                    INSERT INTO sesiones (id_participante, fecha_hora, hr_baseline, rmssd_baseline, sdnn_baseline, notas, usa_vr)
+                    OUTPUT INSERTED.id_sesion
+                    VALUES (?, GETDATE(), ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        id_participante,
+                        _limpiar_valor(hr_baseline),
+                        _limpiar_valor(rmssd_baseline),
+                        _limpiar_valor(sdnn_baseline),
+                        notas or None,
+                        usa_vr,
+                    ),
+                )
             id_sesion = filas[0]["id_sesion"] if filas else None
-            logger.info(f"Sesión {id_sesion} creada para {id_participante} (usa_vr={usa_vr}).")
+            logger.info(f"Sesión {id_sesion} creada para {id_participante} (usa_vr={usa_vr}, día={dia_sesion}).")
             return id_sesion
         except (pyodbc.Error, ConnectionError) as error:
             logger.error(f"No se pudo crear la sesión para {id_participante}: {error}")
             return None
+
+    def marcar_sesion_invalida(self, id_sesion: int, motivo: str = "") -> bool:
+        """Descarta una sesión del análisis (valida = 0) sin borrar sus datos.
+
+        Pensado para sesiones repetidas o con señal cardíaca defectuosa: el
+        análisis (analisis_intrasujeto.py) ignora las sesiones inválidas, así
+        una sesión repetida no cuenta doble. El motivo se anexa a 'notas'.
+
+        Args:
+            id_sesion: Sesión a descartar.
+            motivo: Razón breve (ej. "sensor se desconectó a los 3 min").
+
+        Returns:
+            bool: True si se marcó; False si la tabla aún no tiene la columna
+                'valida' o falló la consulta.
+        """
+        if not self._sesiones_tiene_dia_valida():
+            logger.error("Falta la columna 'valida': correr database/migrar_agregar_dia_valida.py primero.")
+            return False
+        try:
+            self._ejecutar(
+                """
+                UPDATE sesiones
+                SET valida = 0,
+                    notas = LEFT(COALESCE(notas + ' | ', '') + ?, 500)
+                WHERE id_sesion = ?
+                """,
+                (f"INVALIDA: {motivo}" if motivo else "INVALIDA", id_sesion),
+            )
+            logger.info(f"Sesión {id_sesion} marcada como inválida ({motivo or 'sin motivo'}).")
+            return True
+        except (pyodbc.Error, ConnectionError) as error:
+            logger.error(f"No se pudo marcar la sesión {id_sesion} como inválida: {error}")
+            return False
+
+    def actualizar_ruta_preferencia(self, id_participante: str, ruta_preferencia_wav: str) -> bool:
+        """Guarda/actualiza la ruta del audio de preferencia personal de un
+        participante YA registrado — pensado para el Día 2 (o cualquier momento
+        en que el investigador la complete/corrija), así el Día 2 de ese mismo
+        participante la trae precargada sin volver a escribirla (ver
+        _autocompletar_participante_existente() en app_investigador.py).
+
+        Requiere la columna ruta_preferencia_wav en la tabla participantes (ver
+        el ALTER TABLE en el docstring del módulo, sección ESQUEMA DE LA BASE)
+        — si esa columna no existe todavía, esto falla igual que cualquier
+        otro error de SQL: se loggea y devuelve False, sin romper el registro
+        del participante (que ya se hizo antes, por separado).
+
+        Args:
+            id_participante: Identificador del participante.
+            ruta_preferencia_wav: Ruta al WAV de preferencia (como string).
+
+        Returns:
+            bool: True si se actualizó correctamente; False si falló.
+        """
+        try:
+            self._ejecutar(
+                "UPDATE participantes SET ruta_preferencia_wav = ? WHERE id_participante = ?",
+                (ruta_preferencia_wav, id_participante),
+            )
+            return True
+        except (pyodbc.Error, ConnectionError) as error:
+            logger.error(f"No se pudo actualizar la ruta de preferencia de {id_participante}: {error}")
+            return False
+
+    def actualizar_ruta_preferencia_2(self, id_participante: str, ruta_preferencia_wav_2: str) -> bool:
+        """Igual que actualizar_ruta_preferencia(), pero para la SEGUNDA canción de
+        preferencia personal (Día 4, ver PROTOCOLO EXPERIMENTAL FINAL en
+        sesion_completa.py: Días 2 y 4 son ambos de preferencia, con canciones
+        DISTINTAS — la primera vive en ruta_preferencia_wav, esta es la segunda).
+
+        Requiere la columna ruta_preferencia_wav_2 en la tabla participantes (ver
+        el ALTER TABLE en el docstring del módulo, sección ESQUEMA DE LA BASE).
+
+        Args:
+            id_participante: Identificador del participante.
+            ruta_preferencia_wav_2: Ruta al WAV de la segunda canción de preferencia.
+
+        Returns:
+            bool: True si se actualizó correctamente; False si falló.
+        """
+        try:
+            self._ejecutar(
+                "UPDATE participantes SET ruta_preferencia_wav_2 = ? WHERE id_participante = ?",
+                (ruta_preferencia_wav_2, id_participante),
+            )
+            return True
+        except (pyodbc.Error, ConnectionError) as error:
+            logger.error(f"No se pudo actualizar la segunda ruta de preferencia de {id_participante}: {error}")
+            return False
 
     def actualizar_duracion_sesion(self, id_sesion: int, duracion_seg: int) -> bool:
         """Actualiza duracion_seg de una sesión ya creada (se conoce recién al terminarla).
@@ -588,13 +768,12 @@ if __name__ == "__main__":
             ID_PRUEBA,
             edad=25,
             genero="F",
-            mano_dominante="D",
             observaciones="Participante de prueba generado por bd_sqlserver.py __main__",
         )
         print(f"  Registrado: {registrado}")
 
         print("\n=== Registrando de nuevo (debe devolver False, ya existe) ===")
-        print(f"  Registrado: {bd.registrar_participante(ID_PRUEBA, 25, 'F', 'D')}")
+        print(f"  Registrado: {bd.registrar_participante(ID_PRUEBA, 25, 'F')}")
 
         print("\n=== Creando sesión de prueba ===")
         id_sesion = bd.crear_sesion(

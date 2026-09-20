@@ -56,7 +56,7 @@ def _condicion_desde_nombre(nombre_estimulo: str) -> str:
     depender del orquestador de nivel superior.
     """
     nombre_normalizado = nombre_estimulo.lower()
-    for condicion in ("solfeggio", "binaural", "isocronico", "preferencia", "estimulo_negativo"):
+    for condicion in ("solfeggio", "binaural", "isocronico", "paisaje", "preferencia", "estimulo_negativo"):
         if condicion in nombre_normalizado:
             return condicion
     return "reposo"  # fallback: bloques de silencio (baseline, descansoN, cierre, ...)
