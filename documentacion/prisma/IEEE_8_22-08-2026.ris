@@ -1,0 +1,276 @@
+TY  - CONF
+TI  - "Did you hear that?": Investigating localized spatial audio effects on enhancing immersive and affective user experiences in virtual reality
+T2  - 2025 IEEE Conference on Virtual Reality and 3D User Interfaces Abstracts and Workshops (VRW)
+SP  - 1276
+EP  - 1277
+AU  - I. Mavridou
+AU  - E. Seiss
+AU  - G. Ugazio
+AU  - M. Harpster
+AU  - P. Brown
+AU  - S. Cox
+AU  - C. Erie
+AU  - D. L. Jr
+AU  - R. Copt
+AU  - C. Nduka
+AU  - J. Hughes
+AU  - J. Butera
+AU  - D. N. Weiss
+PY  - 2025
+KW  - Location awareness
+KW  - Three-dimensional displays
+KW  - Sensitivity
+KW  - Spatial audio
+KW  - Noise reduction
+KW  - Virtual reality
+KW  - Sensor systems
+KW  - Physiology
+KW  - Acoustic signal processing
+KW  - Signal analysis
+KW  - Audio systems
+KW  - virtual reality
+KW  - sensor systems human-computer interaction
+KW  - electrophysiology
+KW  - signal analysis
+DO  - 10.1109/VRW66409.2025.00284
+JO  - 2025 IEEE Conference on Virtual Reality and 3D User Interfaces Abstracts and Workshops (VRW)
+IS  - 
+SN  - 
+VO  - 
+VL  - 
+JA  - 2025 IEEE Conference on Virtual Reality and 3D User Interfaces Abstracts and Workshops (VRW)
+Y1  - 8-12 March 2025
+AB  - This study examines the effects of software-based localised audio enhancement in VR on spatial audio, immersion, and affective responses. Sixty-eight participants took part in a VR game (Job Simulator) and reported improved sound quality, immersion, and localization under enhanced audio conditions. Physiological measures revealed significant effects on emotional valence, highlighting enhanced audio as a cost-effective way to improve auditory involvement and emotional engagement in VR without additional hardware.
+ER  - 
+
+TY  - CONF
+TI  - Evaluating the User in a Sound Localisation Task in a Virtual Reality Application
+T2  - 2020 Twelfth International Conference on Quality of Multimedia Experience (QoMEX)
+SP  - 1
+EP  - 6
+AU  - A. N. Moraes
+AU  - R. Flynn
+AU  - A. Hines
+AU  - N. Murray
+PY  - 2020
+KW  - Visualization
+KW  - Spatial audio
+KW  - Entertainment industry
+KW  - Virtual reality
+KW  - Medical services
+KW  - Physiology
+KW  - Sensors
+KW  - QoE
+KW  - spatial audio
+KW  - CAPD
+KW  - sound localisation
+KW  - virtual reality
+DO  - 10.1109/QoMEX48832.2020.9123136
+JO  - 2020 Twelfth International Conference on Quality of Multimedia Experience (QoMEX)
+IS  - 
+SN  - 2472-7814
+VO  - 
+VL  - 
+JA  - 2020 Twelfth International Conference on Quality of Multimedia Experience (QoMEX)
+Y1  - 26-28 May 2020
+AB  - Virtual reality (VR) has proven to be a powerful tool enabling the development of immersive multimedia experiences. Initially focused on entertainment, industry and academia have begun to adapt and develop immersive applications for the healthcare domain, with opportunities in terms of condition assessment, diagnosis and intervention. In the context of immersive applications, audio, and in particular spatial audio, plays an important role on the immersion level. In order to process this information, the auditory cortex uses spatial cues encoded in the sound to provide relevant information about the distance, intensity and direction of the sound source. However, many different types of listening disorders can affect this capability. One condition, central auditory processing disorder (CAPD), significantly affects a user's ability to discriminate between different sound sources. People who suffer with this condition, are incapable of processing sounds properly, which may be stressful and frustrating when doing tasks with complex sounds or in noisy environments. This can have a significant impact on a person's quality of life. In this paper, an immersive VR spatial audio application is presented. It enables us to evaluate the ability of users to specify or localise the source of a sound. An integrated sensing system continuously collects relevant data from the user in order to fully understand how to quantify and evaluate spatial auditory skills from a quality of experience (QoE) perspective. QoE gives insight into a user's state and behaviour. To perform a detailed QoE evaluation of the listening task, implicit and explicit metrics were collected from the user. These included: self-reporting questionnaires, localisation performance, and physiological metrics. Data collected from this QoE evaluation gives an insight into a user's abilities to localise sound sources in VR, and also provides information on behaviour and effort (workload) in performing the task.
+ER  - 
+
+TY  - JOUR
+TI  - The Role of Physiological Responses in a VR-Based Sound Localization Task
+T2  - IEEE Access
+SP  - 122082
+EP  - 122091
+AU  - A. N. Moraes
+AU  - R. Flynn
+AU  - A. Hines
+AU  - N. Murray
+PY  - 2021
+KW  - Task analysis
+KW  - Quality of experience
+KW  - Noise measurement
+KW  - Physiology
+KW  - Ear
+KW  - Auditory system
+KW  - Visualization
+KW  - Quality of experience
+KW  - spatial audio
+KW  - virtual reality
+DO  - 10.1109/ACCESS.2021.3108446
+JO  - IEEE Access
+IS  - 
+SN  - 2169-3536
+VO  - 9
+VL  - 9
+JA  - IEEE Access
+Y1  - 2021
+AB  - Virtual reality (VR) has recently emerged as a platform that can be employed in the context of e-health applications. Even though the majority of VR-based applications focus on visual stimuli as the main content, audio also plays a very important role. If someone has an issue with auditory processing, the comprehension of auditory information is compromised. This condition reflects negatively on one's quality of life, given the impact of audio perception on one's ability to communicate effectively or to differentiate and ignore “noise”. This work aims to design a VR application that can be used to: (a) optimize multimodal VR experiences based on user trials (b) extract user data continuously throughout the experiment (c) evaluate a user's auditory processing ability. To accomplish this goal, participants are required to localise a sound source in space in the presence of multiple listening conditions with simple and complex sound stimuli configurations. Data collected from users consists of physiological and objective metrics. The results of this study highlight the relationship between user behaviour (head movement, fixation points) and performance in the sound localisation task. This information can be used to design future applications with the purpose of training one's auditory localisation ability. In addition, the evaluation compared the impact of using two interaction methods to perform this task: using a pointer or eye gaze to indicate the location of the target source. The findings from this study show statistically significant differences in terms of physiological response when subjects are exposed to different interaction methods, with greater immersion and performance for the pointer group.
+ER  - 
+
+TY  - CONF
+TI  - Psychophysiological Effect of Immersive Spatial Audio Experience Enhanced Using Sound Field Synthesis
+T2  - 2021 9th International Conference on Affective Computing and Intelligent Interaction (ACII)
+SP  - 1
+EP  - 8
+AU  - Y. Hyodo
+AU  - C. Sugai
+AU  - J. Suzuki
+AU  - M. Takahashi
+AU  - M. Koizumi
+AU  - A. Tomura
+AU  - Y. Mitsufuji
+AU  - Y. Komoriya
+PY  - 2021
+KW  - Heart
+KW  - Wave power
+KW  - Statistical analysis
+KW  - Autonomic nervous system
+KW  - Time series analysis
+KW  - Music
+KW  - Acoustics
+KW  - Immersive audio experience
+KW  - perception of spatial sound
+KW  - psychophysiological effect
+DO  - 10.1109/ACII52823.2021.9597435
+JO  - 2021 9th International Conference on Affective Computing and Intelligent Interaction (ACII)
+IS  - 
+SN  - 2156-8111
+VO  - 
+VL  - 
+JA  - 2021 9th International Conference on Affective Computing and Intelligent Interaction (ACII)
+Y1  - 28 Sept.-1 Oct. 2021
+AB  - Recent advancements of spatial audio technologies to enhance human’s emotional and immersive experiences are gathering attention. Many studies are clarifying the neural mechanisms of acoustic spatial perception; however, they are limited to the evaluation of mechanisms using basic sound stimuli. Therefore, it remains challenging to evaluate the experience of actual music contents and to verify the effects of higher-order neurophysiological responses including a sense of immersive and realistic experience. To investigate the effects of spatial audio experience, we verified the psychophysiological responses of immersive spatial audio experience using sound field synthesis (SFS) technology. Specifically, we evaluated alpha power as the central nervous system activity, heart rate/heart rate variability and skin conductance as the autonomic nervous system activity during an acoustic experience of an actual music content by comparing stereo and SFS conditions. As a result, statistically significant differences (p < 0.05) were detected in the changes in alpha wave power, high frequency wave power of heart rate variability (HF), and skin conductance level (SCL) among the conditions. The results of the SFS condition showed enhanced the changes in alpha power in the frontal and parietal regions, suggesting enhancement of emotional experience. The results of the SFS condition also suggested that close objects are grouped and perceived on the basis of the spatial proximity of sounds in the presence of multiple sound sources. It is demonstrating that the potential use of SFS technology can enhance emotional and immersive experiences by spatial acoustic expression.
+ER  - 
+
+TY  - CONF
+TI  - 3D Music Impact on Autonomic Nervous System Response and Its Therapeutic Potential
+T2  - 2020 IEEE Conference on Multimedia Information Processing and Retrieval (MIPR)
+SP  - 364
+EP  - 369
+AU  - Y. Qin
+AU  - H. Zhang
+AU  - Y. Wang
+AU  - M. Mao
+AU  - F. Chen
+PY  - 2020
+KW  - Conferences
+KW  - Information processing
+KW  - Music therapy
+KW  - 3D electronic music
+KW  - Binaural Audio
+KW  - Autonomic nervous response regulation
+KW  - Virtual reality
+DO  - 10.1109/MIPR49039.2020.00080
+JO  - 2020 IEEE Conference on Multimedia Information Processing and Retrieval (MIPR)
+IS  - 
+SN  - 
+VO  - 
+VL  - 
+JA  - 2020 IEEE Conference on Multimedia Information Processing and Retrieval (MIPR)
+Y1  - 6-8 Aug. 2020
+AB  - This paper is made to observe the impact of 3D (three-dimensional) and 2D (two-dimensional) music on autonomic nervous system. The experiment detected the intervention effect of 3D music on autonomic nervous system's responses from the general population and explored its therapeutic potential. In this study, seventy-three healthy participants listened to four music tracks with headphones: 3D slow music, 2D slow music, 3D fast music and 2D fast music. The results show that galvanic skin response (GSR) data decreased in all participants after listening to 3D music. The 3D music, which bears obvious characteristics of sound source spatial movements, significantly changed participants' GSR compared to the benchmark obtained before the experiment (P<; 0.05). As such, it can be reasonably argued that 3D music may improve the regulation of autonomic nervous system responses, which contributes to the health of mind and body, and may be used as an auxiliary means for interventions of psychological and physiological diseases such as anxiety and insomnia in the future.
+ER  - 
+
+TY  - CONF
+TI  - An Evaluation of the Presentation of Acoustic Cues for Shorelining Techniques
+T2  - 2023 Immersive and 3D Audio: from Architecture to Automotive (I3DA)
+SP  - 1
+EP  - 9
+AU  - M. Nguyen
+AU  - H. Zhu
+AU  - H. Sun
+AU  - V. Nguyen
+AU  - L. Deverell
+AU  - A. Singh
+AU  - C. Jin
+AU  - C. -T. Lin
+PY  - 2023
+KW  - Loudspeakers
+KW  - Legged locomotion
+KW  - Navigation
+KW  - Atmospheric measurements
+KW  - Current measurement
+KW  - Spatial audio
+KW  - Logic gates
+KW  - spatial audio
+KW  - navigation
+KW  - binaural rendering
+KW  - shorelining
+KW  - speech
+KW  - human behavior
+DO  - 10.1109/I3DA57090.2023.10288622
+JO  - 2023 Immersive and 3D Audio: from Architecture to Automotive (I3DA)
+IS  - 
+SN  - 
+VO  - 
+VL  - 
+JA  - 2023 Immersive and 3D Audio: from Architecture to Automotive (I3DA)
+Y1  - 5-7 Sept. 2023
+AB  - The study explores various scenarios for providing shorelining information via spatial-audio auditory sensory augmentation with a view to assisting people who are blind or have low-vision. Shorelining is a strategy often associated with the use of the "white cane" and generally refers to path-following approaches that rely on contours of structures within a built environment. The aim is to support clear, logical paths of travel. In one approach, auditory shorelining cues are provided via a sequence of two auditory earcons rendered spatially along the shoreline and at the participant’s left or right side. In another approach, the auditory cues are rendered spatially as "gate posts" in between which the participant should walk. The rendering of the auditory earcons follows the participant’s path of travel so that at any given time, there is only ever a sequence of two auditory earcons that provides local shorelining information. The auditory earcons are rendered via two methods: (i) using loudspeakers appropriately placed along the path of travel and (ii) using binaural rendering of virtual speakers via smart glasses. We compared the performance of spatial-audio sensory augmentation with non-spatialized spoken language instruction. Participants’ performance was measured in terms of task accuracy, time, and walking behavior. The cognitive workload was measured using a self-reporting questionnaire. Results indicate that sensory augmentation provided via spatial-audio earcons can provide faster and smoother navigational assistance and guidance compared with spoken verbal instructions. The results also suggest that current binaural rendering using simple augmented-reality tool sets is not as robust as real sound in providing navigational guidance. Lastly, the "gate post" shorelining approach seems more effective than the left and right shorelining technique.
+ER  - 
+
+TY  - CONF
+TI  - Head Related Transfer Function Interpolation Based on Finite Impulse Response Models
+T2  - 2019 Seventh International Conference on Digital Information Processing and Communications (ICDIPC)
+SP  - 8
+EP  - 11
+AU  - B. Al-Sheikh
+AU  - M. A. Matin
+AU  - D. J. Tollin
+PY  - 2019
+KW  - Finite impulse response filters
+KW  - Ear
+KW  - Interpolation
+KW  - Image reconstruction
+KW  - Psychoacoustic models
+KW  - Solid modeling
+KW  - Azimuth
+KW  - HRTF
+KW  - FIR
+KW  - interpolation
+KW  - virtual reality
+KW  - modeling.
+DO  - 10.1109/ICDIPC.2019.8723710
+JO  - 2019 Seventh International Conference on Digital Information Processing and Communications (ICDIPC)
+IS  - 
+SN  - 
+VO  - 
+VL  - 
+JA  - 2019 Seventh International Conference on Digital Information Processing and Communications (ICDIPC)
+Y1  - 2-4 May 2019
+AB  - Head Related Transfer Function (HRTF) describes how the ear and the head in general respond to sounds coming from certain point in space to the ear. It is defined as the ratio of the spectrum at the ear-drum to the spectrum at the sound source. HRTF modeling and reconstruction have been used widely in auditory nervous system research and virtual reality technology, especially in the wearable virtual auditory display (VAD) devices. VADs are currently used in physiological and psychoacoustic research, medical applications, military simulations, industry, in addition to entertainment. HRTFs are usually measured at finite directions in azimuth and elevation because of many limitations. To create complete VAD, HRTFs are modeled or synthesized at finer spatial resolution or directions where they are not measured. Systematic movement of zeros in Finite Impulse Response (FIR) models of Directional Transfer Functions (DTFs), defined as the directional components of the HRTFs, is tracked. Interpolation of zeros movement to create HRTFs at new directions is presented in this paper. HRTFs of subjects from human database are used for this purpose and the reconstructed HRTFs are evaluated by objective and subjective tests for validation. Interpolation at some directions is successfully applied and validated on those models’ orders.
+ER  - 
+
+TY  - JOUR
+TI  - The SONICOM Project: Artificial Intelligence-Driven Immersive Audio, From Personalization to Modeling [Applications Corner]
+T2  - IEEE Signal Processing Magazine
+SP  - 85
+EP  - 88
+AU  - L. Picinali
+AU  - B. F. Katz
+AU  - M. Geronazzo
+AU  - P. Majdak
+AU  - A. Reyes-Lecuona
+AU  - A. Vinciarelli
+PY  - 2022
+KW  - Spatial audio
+KW  - Virtual environments
+KW  - Physiology
+KW  - Standardization
+KW  - Predictive models
+KW  - Data models
+KW  - Artificial intelligence
+KW  - Computational neuroscience
+KW  - Bayes methods
+DO  - 10.1109/MSP.2022.3182929
+JO  - IEEE Signal Processing Magazine
+IS  - 6
+SN  - 1558-0792
+VO  - 39
+VL  - 39
+JA  - IEEE Signal Processing Magazine
+Y1  - Nov. 2022
+AB  - Every individual perceives spatial audio differently, due in large part to the unique and complex shape of ears and head. Therefore, high-quality, headphone-based spatial audio should be uniquely tailored to each listener in an effective and efficient manner. Artificial intelligence (AI) is a powerful tool that can be used to drive forward research in spatial audio personalization. The SONICOM project aims to employ a data-driven approach that links physiological characteristics of the ear to the individual acoustic filters, which allows us to localize sound sources and perceive them as being located around us. A small amount of data acquired from users could allow personalized audio experiences, and AI could facilitate this by offering a new perspective on the matter. A Bayesian approach to computational neuroscience and binaural sound reproduction will be linked to create a metric for AI-based algorithms that will predict realistic spatial audio quality. Being able to consistently and repeatedly evaluate and quantify the improvements brought by technological advancements, as well as the impact these have on complex interactions in virtual environments, will be key for the development of new techniques and for unlocking new approaches to understanding the mechanisms of human spatial hearing and communication.
+ER  - 
+
+

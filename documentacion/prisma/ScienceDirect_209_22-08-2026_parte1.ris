@@ -1,0 +1,149 @@
+TY  - JOUR
+T1  - Arousal level classification of the aging adult from electro-dermal activity: From hardware development to software architecture
+AU  - Martínez-Rodrigo, Arturo
+AU  - Zangróniz, Roberto
+AU  - Pastor, José Manuel
+AU  - Sokolova, Marina V.
+JO  - Pervasive and Mobile Computing
+VL  - 34
+SP  - 46
+EP  - 59
+PY  - 2017
+DA  - 2017/01/01/
+T2  - Pervasive Computing for Gerontechnology
+SN  - 1574-1192
+DO  - https://doi.org/10.1016/j.pmcj.2016.04.006
+UR  - https://www.sciencedirect.com/science/article/pii/S1574119216300293
+KW  - Wearable
+KW  - Electro-dermal activity
+KW  - Stress quantification
+KW  - Ambient intelligence
+AB  - The fast aging of the population around the world makes ambient intelligence-based assistive technologies essential for sustainable and efficient health-care systems. Aging adults who decide to live alone at home need constant monitoring to control their health status and quality of life. This work introduces a new wearable device that continuously monitors the emotional state of the elderly. Electro-dermal activity (EDA) is used to classify the aging adults into two groups: sleepiness and stressed. The results report a performance of more than 83% of accuracy by using exclusively time and magnitude features from EDA events.
+ER  - 
+
+TY  - JOUR
+T1  - 1999 academy annual assembly abstracts
+JO  - Archives of Physical Medicine and Rehabilitation
+VL  - 80
+IS  - 9
+SP  - 1118
+EP  - 1205
+PY  - 1999
+DA  - 1999/09/01/
+SN  - 0003-9993
+DO  - https://doi.org/10.1016/S0003-9993(99)90073-4
+UR  - https://www.sciencedirect.com/science/article/pii/S0003999399900734
+ER  - 
+
+TY  - CHAP
+BT  - Integrative Medicine for Children
+PB  - W.B. Saunders
+CY  - Saint Louis
+SP  - 500
+EP  - 522
+PY  - 2009
+DA  - 2009/01/01/
+SN  - 978-1-4160-2299-2
+DO  - https://doi.org/10.1016/B978-141602299-2.10070-2
+UR  - https://www.sciencedirect.com/science/article/pii/B9781416022992100702
+ER  - 
+
+TY  - CHAP
+A2  - Carey, William B.
+A2  - Crocker, Allen C.
+A2  - Coleman, William L.
+A2  - Elias, Ellen Roy
+A2  - Feldman, Heidi M.
+BT  - Developmental-Behavioral Pediatrics (Fourth Edition)
+PB  - W.B. Saunders
+CY  - Philadelphia
+SP  - 993
+EP  - 1042
+PY  - 2009
+DA  - 2009/01/01/
+SN  - 978-1-4160-3370-7
+DO  - https://doi.org/10.1016/B978-1-4160-3370-7.00104-8
+UR  - https://www.sciencedirect.com/science/article/pii/B9781416033707001048
+ER  - 
+
+TY  - JOUR
+T1  - Posters
+JO  - International Psychogeriatrics
+VL  - 25
+SP  - S75
+EP  - S192
+PY  - 2013
+DA  - 2013/10/01/
+SN  - 1041-6102
+DO  - https://doi.org/10.1017/S1041610213002160
+UR  - https://www.sciencedirect.com/science/article/pii/S104161022401514X
+ER  - 
+
+TY  - JOUR
+T1  - RETRACTED: Don’t stop believing: Rituals improve performance by decreasing anxiety
+AU  - Brooks, Alison Wood
+AU  - Schroeder, Juliana
+AU  - Risen, Jane L.
+AU  - Gino, Francesca
+AU  - Galinsky, Adam D.
+AU  - Norton, Michael I.
+AU  - Schweitzer, Maurice E.
+JO  - Organizational Behavior and Human Decision Processes
+VL  - 137
+SP  - 71
+EP  - 85
+PY  - 2016
+DA  - 2016/11/01/
+SN  - 0749-5978
+DO  - https://doi.org/10.1016/j.obhdp.2016.07.004
+UR  - https://www.sciencedirect.com/science/article/pii/S074959781630437X
+AB  - This article has been retracted: please see Elsevier Policy on Article Withdrawal (https://www.elsevier.com/locate/withdrawalpolicy). The Editor-in-Chief was contacted by the author team following a self-initiated review of the data reported in this article. In their request, the authors noted that, after an audit into their data, they no longer have confidence in the integrity of the data. The authors requested a retraction after identifying issues across several studies. The data reported in the paper was posted by the authors in 2017 at https://osf.io/mgax8/. A committee at the journal has investigated the matter and requested the raw data and materials from all studies. The authors did not provide the raw data and materials for Studies1a, 1b, or 2, but earlier versions of the data for Studies 3-4 were submitted. The journal contacted the office of research integrity at University of Pennsylvania and Harvard Business School for the raw data. Neither office provided the raw data. Therefore, the journal could not investigate Studies 1a, 1b, or 2 any further. For Studies 3 and 4, the journal was able to compare the posted data (from 2017) to the earlier versions that were provided by the authors. The details of data collection for each study, and the concerns that were identified, are below. Given these concerns, particularly anomalies with the data in Study 1b, the retraction committee at the journal recommended the retraction of the article. • Pilot study. Participants were recruited through Mturk by a research assistant overseen by Francesca Gino and Michael Norton at Harvard Business School. The raw data and materials were not provided. The journal could not investigate this study any further. • Study 1a. Participants were recruited at Wharton Behavioral Lab by Alison Wood Brooks (PI: Maurice Schweitzer). The raw data and materials were not provided. The journal could not investigate this study any further. • Study 1b. Participants were recruited at the Wharton Behavioral Lab at Wharton Behavioral Lab by Alison Wood Brooks (PI: Maurice Schweitzer). The raw data and materials were not provided. There are anomalies in the posted data (https://osf.io/mgax8/). Specifically, there are streaks of heart rate ratings that were unlikely to have occurred naturally. The authors report they do not know who handled the data. The journal could not investigate this study any further. • Study 2. Participants were recruited through Mturk by Alison Wood Brooks. The raw data and materials were not provided. The journal could not investigate this study any further. • Study 3. Participants were recruited at the University of Chicago research lab by Juliana Schroeder (PI: Jane Risen). The authors shared earlier versions of the raw data (prior to the posted version in 2017) and materials with the journal. A reanalysis of the data showed that 6 participants' datapoints were dropped prior to analysis but their removal was not reported in the paper. The authors report that the decisions to drop data were based on RAs' written notes. The reanalysis shows that the focal effect becomes non-significant once all participants are included. • Study 4. The Study 4 participants were recruited at the University of Chicago research lab by Juliana Schroeder (PI: Jane Risen). The authors shared earlier versions of the raw data (prior to the posted version in 2017) and materials with the journal. A reanalysis of the data showed that 11 participants' datapoints were dropped prior to analysis but their removal was not reported in the paper. The authors report that the decisions to drop data were based on RAs' written notes. The reanalysis shows that the focal effect becomes non-significant once all participants are included.
+ER  - 
+
+TY  - CHAP
+T1  - Subject Index
+A2  - Pfaff, Donald W.
+A2  - Arnold, Arthur P.
+A2  - Etgen, Anne M.
+A2  - Fahrbach, Susan E.
+A2  - Rubin, Robert T.
+BT  - Hormones, Brain and Behavior (Second Edition)
+PB  - Academic Press
+CY  - San Diego
+SP  - 3363
+EP  - 3627
+PY  - 2009
+DA  - 2009/01/01/
+SN  - 978-0-08-088783-8
+DO  - https://doi.org/10.1016/B978-008088783-8.09001-X
+UR  - https://www.sciencedirect.com/science/article/pii/B978008088783809001X
+ER  - 
+
+TY  - CHAP
+T1  - Index
+BT  - Myofascial Pain and Fibromyalgia (Second Edition)
+PB  - Mosby
+CY  - Saint Louis
+SP  - 589
+EP  - 606
+PY  - 2002
+DA  - 2002/01/01/
+SN  - 978-0-323-01155-6
+DO  - https://doi.org/10.1016/B978-0-323-01155-6.50027-X
+UR  - https://www.sciencedirect.com/science/article/pii/B978032301155650027X
+ER  - 
+
+TY  - CHAP
+T1  - Index
+A2  - Kushida, Clete A.
+BT  - Encyclopedia of Sleep
+PB  - Academic Press
+CY  - Waltham
+SP  - 475
+EP  - 567
+PY  - 2013
+DA  - 2013/01/01/
+SN  - 978-0-12-378611-1
+DO  - https://doi.org/10.1016/B978-0-12-378610-4.09001-X
+UR  - https://www.sciencedirect.com/science/article/pii/B978012378610409001X
+ER  - 
