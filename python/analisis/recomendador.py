@@ -290,6 +290,109 @@ class Recomendador:
             "justificacion": justificacion,
         }
 
+    def decidir_estimulo_dia5(
+        self, sesiones: list[dict], pruebas_por_sesion: dict[int, list[dict]]
+    ) -> dict:
+        """Decide qué condición repetir en la sesión adaptativa (Día 5).
+
+        Es la pieza que justifica que el sistema es "adaptativo" (ver
+        discusión con el director sobre el protocolo de 5 sesiones): compara
+        el score de relajación promedio de "terapeuticas" (Días 1+3) vs.
+        "preferencia" (Días 2+4) para ESTE participante, y devuelve cuál
+        condición ganó — esa es la que se repite en el Día 5.
+
+        Mismo patrón de cálculo que usa _tab_recomendacion() en
+        app_investigador.py (una llamada a calcular_score_relajacion() por
+        sesión, usando el baseline de esa misma sesión), pero reutilizable
+        también desde sesion_completa.py (modo consola, sin GUI).
+
+        Solo usa sesiones con dia_sesion en (1, 2, 3, 4): si por error se le
+        pasa una sesión de Día 5 ya registrada (p. ej. al recalcular después),
+        se descarta explícitamente para no retroalimentar la decisión con su
+        propio resultado.
+
+        Args:
+            sesiones: Lista de dicts (una por sesión), cada uno con al menos
+                id_sesion, dia_sesion, hr_baseline, sdnn_baseline,
+                rmssd_baseline — mismo formato que
+                BaseDatosTesis.obtener_sesiones_participante().
+            pruebas_por_sesion: dict {id_sesion: lista de dicts de pruebas},
+                cada prueba con tipo_estimulo, hr_promedio, sdnn, rmssd,
+                resp_por_min — mismo formato que
+                BaseDatosTesis.obtener_pruebas_sesion().
+
+        Returns:
+            dict: condicion_ganadora ("terapeutica" | "preferencia"),
+                comparacion (dict de comparar_grupos_terapeutica_vs_preferencia),
+                justificacion (str), n_sesiones_usadas (int).
+
+        Raises:
+            ValueError: Si no hay datos válidos de AMBAS condiciones en los
+                Días 1-4 (p. ej. se llamó antes de completar el protocolo).
+        """
+        rankings_por_sesion = []
+        for sesion in sesiones:
+            if sesion.get("dia_sesion") == 5:
+                continue
+            pruebas = pruebas_por_sesion.get(sesion["id_sesion"], [])
+            if not pruebas:
+                continue
+            tabla = pd.DataFrame(
+                [
+                    {
+                        "condicion": p["tipo_estimulo"],
+                        "hr_media": p.get("hr_promedio"),
+                        "sdnn": p.get("sdnn"),
+                        "rmssd": p.get("rmssd"),
+                        "respiraciones_min": p.get("resp_por_min"),
+                    }
+                    for p in pruebas
+                ]
+            )
+            baseline_reposo = {
+                "hr_media": sesion.get("hr_baseline"),
+                "sdnn": sesion.get("sdnn_baseline"),
+                "rmssd": sesion.get("rmssd_baseline"),
+                "respiraciones_min": float("nan"),
+            }
+            rankings_por_sesion.append(self.calcular_score_relajacion(tabla, baseline_reposo))
+
+        if not rankings_por_sesion:
+            raise ValueError(
+                "No hay pruebas registradas en los Días 1-4 para decidir el estímulo del Día 5."
+            )
+
+        ranking = pd.concat(rankings_por_sesion, ignore_index=True)
+        comparacion = self.comparar_grupos_terapeutica_vs_preferencia(ranking)
+
+        terapeuticas = comparacion["terapeuticas"]
+        preferencia = comparacion["preferencia"]
+        if terapeuticas is None or preferencia is None:
+            raise ValueError(
+                "Faltan sesiones válidas de alguna condición (terapéutica o preferencia) "
+                "en los Días 1-4; no se puede decidir el estímulo del Día 5 todavía."
+            )
+
+        if preferencia["score_relajacion"] >= terapeuticas["score_relajacion"]:
+            condicion_ganadora = "preferencia"
+            ganador, perdedor = preferencia, terapeuticas
+        else:
+            condicion_ganadora = "terapeutica"
+            ganador, perdedor = terapeuticas, preferencia
+
+        justificacion = (
+            f"Día 5 repite '{condicion_ganadora}': score de relajación "
+            f"{ganador['score_relajacion']:.3f} frente a {perdedor['score_relajacion']:.3f} "
+            f"de la otra condición, en los Días 1-4."
+        )
+
+        return {
+            "condicion_ganadora": condicion_ganadora,
+            "comparacion": comparacion,
+            "justificacion": justificacion,
+            "n_sesiones_usadas": len(rankings_por_sesion),
+        }
+
     def recomendar_para_todos(
         self, carpeta_sesiones: Path, patron_fecha: Optional[str] = None
     ) -> pd.DataFrame:

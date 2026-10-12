@@ -41,26 +41,34 @@ PROTOCOLO POR DÍA (no 4 estímulos en una sola sesión): a partir del rediseño
 pedido por el tutor, cada sesión real corre UN solo tipo de estímulo —
 baseline -> <tipo> -> cierre (ver obtener_protocolo_sesion_dia() y
 TIPOS_ESTANDARIZADOS en sesion_completa.py) — y el mismo participante vuelve
-en 4 días separados (24-48h entre cada uno): 2 días de sonido terapéutico
-(Días 1 y 3) + 2 días de preferencia musical, cada uno con una canción
-DISTINTA (Días 2 y 4) — ver el porqué de los 2 días de preferencia en
-comparar_grupos_terapeutica_vs_preferencia() más abajo. "Nueva sesión"
-(Vista 1) pide al investigador elegir a mano el Día (1/2/3/4) de la sesión
-que va a correr: Días 2 y 4 siempre son preferencia sonora personal (Día 2
-requiere campo_preferencia_wav, Día 4 requiere campo_preferencia_wav_2 —
-canción distinta a la de Día 2); Días 1 y 3 usan el sorteo determinístico de
-asignar_estimulos_dia1_dia3() (mismo participante_id -> mismo resultado,
-sin necesidad de persistir qué le tocó). Por eso self.bloques_estimulo_sesion
-(armado en _al_registrar_participante) tiene UN solo elemento, no los 4 de
+en 5 días separados (24-48h entre cada uno): 2 días de sonido terapéutico
+repetido (Días 1 y 3, el MISMO tipo sorteado una sola vez) + 2 días de
+preferencia musical repetida (Días 2 y 4, la MISMA canción) + 1 día
+adaptativo (Día 5, repite la condición que mejor resultó) — ver el porqué
+de repetir el mismo estímulo en comparar_grupos_terapeutica_vs_preferencia()
+más abajo. "Nueva sesión" (Vista 1) pide al investigador elegir a mano el
+Día (1-5) de la sesión que va a correr: Días 2 y 4 siempre son preferencia
+sonora personal (ambos usan campo_preferencia_wav, la misma ruta); Días 1 y
+3 usan el sorteo determinístico de asignar_estimulos_dia1_dia3() (mismo
+participante_id -> mismo resultado, sin necesidad de persistir qué le
+tocó); Día 5 consulta la BD y decide automáticamente (ver
+decidir_estimulo_dia5 en sesion_completa.py) — esa decisión NUNCA se
+mezcla con el contraste estadístico de H1/H0 (ver DIAS_CONTRASTE_H1H0 en
+analisis_intrasujeto.py). Por eso self.bloques_estimulo_sesion (armado en
+_al_registrar_participante) tiene UN solo elemento, no varios de
 _METADATOS_TIPO_ESTIMULO — ver ese atributo para el cuestionario post-hoc.
 
 RESULTADO CENTRAL DE LA TESIS (H1/H0, Anexo 5 página 19): la hipótesis NO
 compara las 4 sesiones individualmente entre sí — compara exactamente 2
 GRUPOS pooleados: "frecuencias terapéuticas comunes" (Días 1+3 promediados)
-vs. "sonidos de preferencia personal" (Días 2+4 promediados). Por eso los 2
-días de preferencia existen (para tener con qué promediar ese grupo, igual
-que los 2 días terapéuticos) — NO para comparar una canción de preferencia
-contra la otra, ni un tipo terapéutico contra el otro. Ver
+vs. "sonidos de preferencia personal" (Días 2+4 promediados). El Día 5
+(adaptativa) queda SIEMPRE fuera de este contraste — repite a propósito la
+condición ganadora, así que mezclarlo acá sesgaría el resultado a su favor
+(ver DIAS_CONTRASTE_H1H0 en analisis_intrasujeto.py). Por eso los 2 días de
+preferencia existen (para tener con qué promediar ese grupo, igual que los
+2 días terapéuticos) — NO para comparar una canción de preferencia contra
+otra, ni un tipo terapéutico contra otro (ahora repiten el mismo estímulo
+dos veces cada uno, no dos estímulos distintos). Ver
 Recomendador.comparar_grupos_terapeutica_vs_preferencia() y la pestaña
 Recomendación (_tab_recomendacion / _construir_tarjeta_comparacion_grupos),
 que muestra este resultado de 2 grupos como PRIMARIO; el ranking sesión por
@@ -152,6 +160,7 @@ from sesion_completa import (  # noqa: E402
     ReproductorEstimulos,
     TIPOS_ESTANDARIZADOS,
     asignar_estimulos_dia1_dia3,
+    decidir_estimulo_dia5,
     obtener_protocolo_sesion_dia,
     _resolver_audio_real,
     _calcular_duracion_total_protocolo,
@@ -372,7 +381,6 @@ class AppInvestigador:
         self.usar_sensor_real: bool = False
         self.reproducir_audio_real: bool = True
         self.ruta_preferencia_wav: Optional[str] = None
-        self.ruta_preferencia_wav_2: Optional[str] = None
         # VR (Meta Quest 2, solo visual — ver vr/unity_osc.py). _vr_ok arranca en True
         # porque con el switch apagado (default) no bloquea nada; se pone en False recién
         # cuando el switch se enciende y el ping todavía no confirmó que Unity responde.
@@ -987,14 +995,17 @@ class AppInvestigador:
             ),
         )
 
-        # --- Día de la sesión (1/2/3/4, ver PROTOCOLO POR DÍA en el docstring del
+        # --- Día de la sesión (1/2/3/4/5, ver PROTOCOLO POR DÍA en el docstring del
         # módulo) — el investigador lo elige a mano; Días 2 y 4 fuerzan
-        # tipo_estimulo="preferencia" y exigen su propio campo de ruta (campo_preferencia_wav
-        # para Día 2, campo_preferencia_wav_2 para Día 4 — canción DISTINTA, ver
-        # _revalidar_formulario, _al_registrar_participante). ft.Dropdown en esta versión
-        # de Flet no dispara "on_change" (ver el mismo bug real documentado en
-        # selector_orden más abajo, en _tab_participantes) — el evento correcto es
-        # "on_select". ---
+        # tipo_estimulo="preferencia" y usan campo_preferencia_wav (la MISMA canción
+        # en ambos días — ya no hay un segundo campo obligatorio). El Día 5 es
+        # adaptativo: se decide automáticamente contra la BD (ver
+        # decidir_estimulo_dia5 en sesion_completa.py) y también puede necesitar
+        # campo_preferencia_wav si la condición ganadora resulta "preferencia" (ver
+        # _revalidar_formulario, _al_registrar_participante). ft.Dropdown en esta
+        # versión de Flet no dispara "on_change" (ver el mismo bug real documentado
+        # en selector_orden más abajo, en _tab_participantes) — el evento correcto
+        # es "on_select". ---
         self.selector_dia = ft.Dropdown(
             label="Día de la sesión",
             value="1",
@@ -1005,9 +1016,10 @@ class AppInvestigador:
             focused_border_color=Colors.PRIMARY,
             options=[
                 ft.dropdown.Option("1", "Día 1 — estímulo sorteado"),
-                ft.dropdown.Option("2", "Día 2 — preferencia personal (1ª canción)"),
-                ft.dropdown.Option("3", "Día 3 — estímulo sorteado"),
-                ft.dropdown.Option("4", "Día 4 — preferencia personal (2ª canción)"),
+                ft.dropdown.Option("2", "Día 2 — preferencia personal"),
+                ft.dropdown.Option("3", "Día 3 — repite estímulo de Día 1"),
+                ft.dropdown.Option("4", "Día 4 — repite preferencia de Día 2"),
+                ft.dropdown.Option("5", "Día 5 — adaptativa (repite el mejor estímulo)"),
             ],
         )
         self.selector_dia.on_select = lambda e: self._revalidar_formulario()
@@ -1051,22 +1063,8 @@ class AppInvestigador:
         )
 
         self.campo_preferencia_wav = ft.TextField(
-            label="Ruta al audio de preferencia personal (obligatorio en Día 2)",
+            label="Ruta al audio de preferencia personal (obligatorio en Días 2, 4 y 5)",
             hint_text=r"C:\Tesis_Kevin\audio_estimulos\preferencias\mi_cancion.wav",
-            border_radius=Radius.INPUT,
-            filled=True,
-            fill_color=Colors.BG_MAIN,
-            border_color=Colors.BORDER,
-            focused_border_color=Colors.PRIMARY,
-            prefix_icon=ft.Icons.AUDIO_FILE_OUTLINED,
-            on_change=lambda e: self._revalidar_formulario(),
-        )
-
-        # Segunda canción de preferencia (Día 4) -- debe ser DISTINTA a la de Día 2,
-        # ver PROTOCOLO POR DÍA en el docstring del módulo de sesion_completa.py.
-        self.campo_preferencia_wav_2 = ft.TextField(
-            label="Ruta al audio de preferencia personal — 2ª canción (obligatorio en Día 4)",
-            hint_text=r"C:\Tesis_Kevin\audio_estimulos\preferencias\mi_otra_cancion.wav",
             border_radius=Radius.INPUT,
             filled=True,
             fill_color=Colors.BG_MAIN,
@@ -1110,7 +1108,6 @@ class AppInvestigador:
                     color=Colors.TEXT_SECONDARY,
                 ),
                 self.campo_preferencia_wav,
-                self.campo_preferencia_wav_2,
                 ft.Container(
                     padding=ft.padding.Padding.all(Spacing.SM),
                     border_radius=Radius.INPUT,
@@ -1188,10 +1185,10 @@ class AppInvestigador:
         """Si el ID que se acaba de escribir en campo_id ya existe en la BD, precarga
         sus datos demográficos y sus rutas de audio de preferencia si ya las tenía
         guardadas (mismo participante — no hace falta re-tipearlas en cada uno de
-        sus 4 días) y sugiere el Día siguiente en self.selector_dia.
+        sus 5 días) y sugiere el Día siguiente en self.selector_dia.
 
         La sugerencia de Día es una HEURÍSTICA (cantidad de sesiones ya guardadas +
-        1, tope 4), NO un dato autoritativo: bd_sqlserver.py no persiste ningún
+        1, tope 5), NO un dato autoritativo: bd_sqlserver.py no persiste ningún
         campo "dia" en la tabla de sesiones (el Día es un concepto que solo existe
         en memoria, ver PROTOCOLO POR DÍA en el docstring del módulo), así que esto
         puede quedar mal si una sesión anterior falló a mitad de camino sin
@@ -1220,12 +1217,9 @@ class AppInvestigador:
         ruta_guardada = existente.get("ruta_preferencia_wav")
         if ruta_guardada and getattr(self, "campo_preferencia_wav", None) is not None:
             self.campo_preferencia_wav.value = ruta_guardada
-        ruta_guardada_2 = existente.get("ruta_preferencia_wav_2")
-        if ruta_guardada_2 and getattr(self, "campo_preferencia_wav_2", None) is not None:
-            self.campo_preferencia_wav_2.value = ruta_guardada_2
 
         sesiones_previas = self.bd.obtener_sesiones_participante(id_participante)
-        dia_sugerido = min(len(sesiones_previas) + 1, 4)
+        dia_sugerido = min(len(sesiones_previas) + 1, 5)
         if getattr(self, "selector_dia", None) is not None:
             self.selector_dia.value = str(dia_sugerido)
 
@@ -1253,19 +1247,17 @@ class AppInvestigador:
             errores.append("Sensor Wahoo TRACKR no detectado por BLE — verificá que esté prendido y cerca.")
         # Días 2 y 4 son SIEMPRE preferencia personal (ver PROTOCOLO POR DÍA en el
         # docstring del módulo) — sin su ruta de WAV ese bloque no tendría qué
-        # reproducir. Cada día usa su propio campo (canción DISTINTA en Día 4).
+        # reproducir. Día 4 repite la MISMA canción del Día 2 (mismo campo, ya no
+        # uno separado). El Día 5 también puede terminar siendo "preferencia" (la
+        # sesión adaptativa repite lo que mejor resultó en los Días 1-4) — como no
+        # se sabe cuál condición gana hasta calcularlo contra la BD, se exige el
+        # campo igual en Día 5 para no bloquear el registro a mitad de camino.
         if (
             getattr(self, "selector_dia", None) is not None
-            and self.selector_dia.value == "2"
+            and self.selector_dia.value in ("2", "4", "5")
             and not (getattr(self, "campo_preferencia_wav", None) and (self.campo_preferencia_wav.value or "").strip())
         ):
-            errores.append("Día 2 requiere la ruta al audio de preferencia personal.")
-        if (
-            getattr(self, "selector_dia", None) is not None
-            and self.selector_dia.value == "4"
-            and not (getattr(self, "campo_preferencia_wav_2", None) and (self.campo_preferencia_wav_2.value or "").strip())
-        ):
-            errores.append("Día 4 requiere la ruta a la segunda canción de preferencia personal (distinta a la de Día 2).")
+            errores.append("Días 2, 4 y 5 requieren la ruta al audio de preferencia personal.")
         self.boton_registrar.disabled = bool(errores)
         self.texto_validacion_formulario.value = "\n".join(f"• {e}" for e in errores)
         self._actualizar_pagina_segura()
@@ -1381,12 +1373,8 @@ class AppInvestigador:
         # estado del botón quedó desactualizado.
         dia_sesion = int(self.selector_dia.value or "1")
         ruta_preferencia_wav = (self.campo_preferencia_wav.value or "").strip() or None
-        ruta_preferencia_wav_2 = (self.campo_preferencia_wav_2.value or "").strip() or None
-        if dia_sesion == 2 and ruta_preferencia_wav is None:
-            self._mostrar_snack(SnackBarError("Día 2 requiere la ruta al audio de preferencia personal."))
-            return
-        if dia_sesion == 4 and ruta_preferencia_wav_2 is None:
-            self._mostrar_snack(SnackBarError("Día 4 requiere la ruta a la segunda canción de preferencia personal."))
+        if dia_sesion in (2, 4, 5) and ruta_preferencia_wav is None:
+            self._mostrar_snack(SnackBarError("Días 2, 4 y 5 requieren la ruta al audio de preferencia personal."))
             return
 
         datos = self.formulario.obtener_datos()
@@ -1408,14 +1396,11 @@ class AppInvestigador:
             # se indicó en cualquier día, se guarda igual.
             if ruta_preferencia_wav is not None:
                 self.bd.actualizar_ruta_preferencia(datos["id_participante"], ruta_preferencia_wav)
-            if ruta_preferencia_wav_2 is not None:
-                self.bd.actualizar_ruta_preferencia_2(datos["id_participante"], ruta_preferencia_wav_2)
 
             self.participante_actual = datos
             self.usar_sensor_real = bool(self.check_sensor_real.value)
             self.reproducir_audio_real = bool(self.check_audio_real.value)
             self.ruta_preferencia_wav = ruta_preferencia_wav
-            self.ruta_preferencia_wav_2 = ruta_preferencia_wav_2
             self.usar_vr = bool(self.check_usar_vr.value)
             self.dia_sesion = dia_sesion
 
@@ -1423,9 +1408,23 @@ class AppInvestigador:
             # docstring del módulo, sesion_completa.py); Días 1 y 3 usan el sorteo
             # determinístico de asignar_estimulos_dia1_dia3() — mismo participante_id
             # siempre da el mismo resultado, sin necesidad de guardar en la BD qué le
-            # tocó cada día.
+            # tocó cada día. Día 5 consulta la BD para decidir automáticamente cuál
+            # condición repetir (ver decidir_estimulo_dia5 en sesion_completa.py) —
+            # eso es lo que hace al sistema "adaptativo".
             if self.dia_sesion in (2, 4):
                 self.tipo_estimulo_sesion = "preferencia"
+            elif self.dia_sesion == 5:
+                try:
+                    self.tipo_estimulo_sesion = decidir_estimulo_dia5(datos["id_participante"])
+                except ValueError as error:
+                    self._mostrar_snack(
+                        SnackBarError(f"No se pudo decidir el estímulo del Día 5: {error}")
+                    )
+                    return
+                logger.info(
+                    f"{datos['id_participante']} día 5 (adaptativa): estímulo decidido -> "
+                    f"'{self.tipo_estimulo_sesion}'"
+                )
             else:
                 tipo_dia1, tipo_dia3 = asignar_estimulos_dia1_dia3(datos["id_participante"])
                 self.tipo_estimulo_sesion = tipo_dia1 if self.dia_sesion == 1 else tipo_dia3
@@ -1447,16 +1446,15 @@ class AppInvestigador:
             # revisa): si va a sonar audio real pero el WAV de preferencia no existe, ese
             # bloque va a quedar en silencio (degradación ya existente en
             # _resolver_audio_real() de sesion_completa.py) — mejor que se sepa de una.
-            # Ya se validó arriba que Día 2/Día 4 siempre traen su ruta, así que esto solo
-            # puede dispararse por un archivo que no existe en disco.
-            ruta_preferencia_de_este_dia = self.ruta_preferencia_wav_2 if self.dia_sesion == 4 else self.ruta_preferencia_wav
+            # Día 2 y Día 4 repiten la MISMA canción (self.ruta_preferencia_wav); Día 5
+            # solo la necesita si tipo_estimulo_sesion resultó "preferencia".
             if (
                 self.reproducir_audio_real
-                and self.dia_sesion in (2, 4)
-                and not Path(ruta_preferencia_de_este_dia).exists()
+                and self.tipo_estimulo_sesion == "preferencia"
+                and not Path(self.ruta_preferencia_wav).exists()
             ):
                 self._mostrar_snack(
-                    SnackBarError(f"No existe el archivo '{ruta_preferencia_de_este_dia}': ese bloque va a sonar en silencio.")
+                    SnackBarError(f"No existe el archivo '{self.ruta_preferencia_wav}': ese bloque va a sonar en silencio.")
                 )
 
             # Reset de estado de captura: por si ya se corrió una sesión antes en el
@@ -1946,8 +1944,10 @@ class AppInvestigador:
                 usar_vr=self.usar_vr,
             )
             if self.reproducir_audio_real:
-                ruta_preferencia_de_este_dia = self.ruta_preferencia_wav_2 if self.dia_sesion == 4 else self.ruta_preferencia_wav
-                preferencia_wav = Path(ruta_preferencia_de_este_dia) if ruta_preferencia_de_este_dia else None
+                # Día 2, Día 4 y (si corresponde) Día 5 usan la MISMA canción —
+                # ya no hay una segunda ruta distinta por día (ver PROTOCOLO
+                # EXPERIMENTAL FINAL en sesion_completa.py).
+                preferencia_wav = Path(self.ruta_preferencia_wav) if self.ruta_preferencia_wav else None
                 protocolo = _resolver_audio_real(protocolo, preferencia_wav)
             self.duracion_total_protocolo = _calcular_duracion_total_protocolo(protocolo)
             # Mismos nombre/duracion_seg que el self.protocolo_activo ya calculado en
@@ -3067,8 +3067,10 @@ class AppInvestigador:
                 participante_id = selector_participante.value
                 # SELECT * FROM sesiones WHERE id_participante = ? ORDER BY fecha_hora
                 # (ver BaseDatosTesis.obtener_sesiones_participante) — todas las sesiones
-                # que este participante tenga hasta ahora (1 a 4 de 4 días, o incluso
-                # 1 sola sesión vieja de 4 pruebas), no se filtra por cantidad.
+                # que este participante tenga hasta ahora (1 a 5 de 5 días, o incluso
+                # 1 sola sesión vieja de 4 pruebas), no se filtra por cantidad. El Día 5
+                # se excluye más abajo SOLO de comparacion_grupos (ver ahí el porqué),
+                # no de este ranking por-sesión.
                 sesiones = self.bd.obtener_sesiones_participante(participante_id)
                 if not sesiones:
                     contenedor_resultado.content = ft.Text(
@@ -3107,7 +3109,9 @@ class AppInvestigador:
                         "rmssd": sesion.get("rmssd_baseline"),
                         "respiraciones_min": float("nan"),
                     }
-                    rankings_por_sesion.append(Recomendador().calcular_score_relajacion(tabla, baseline_reposo))
+                    ranking_sesion = Recomendador().calcular_score_relajacion(tabla, baseline_reposo)
+                    ranking_sesion["dia_sesion"] = sesion.get("dia_sesion")
+                    rankings_por_sesion.append(ranking_sesion)
                     if any(p.get("preferencia") for p in pruebas):
                         alguna_preferencia = True
 
@@ -3137,7 +3141,16 @@ class AppInvestigador:
                 # vs. "sonidos de preferencia personal" (Días 2+4 promediados). El
                 # ranking por-sesión de más arriba queda como detalle SECUNDARIO (ver
                 # Recomendador.comparar_grupos_terapeutica_vs_preferencia()).
-                comparacion_grupos = Recomendador().comparar_grupos_terapeutica_vs_preferencia(ranking)
+                #
+                # El Día 5 ("adaptativa") repite a propósito el estímulo que ya dio
+                # mejor resultado en los Días 1-4 — incluirlo acá sesgaría el grupo
+                # ganador con una muestra elegida porque se sabía que iba a salir
+                # bien (mismo criterio que analisis_intrasujeto.preparar_sesiones).
+                # Se excluye SOLO de esta comparación de 2 grupos; el ranking por
+                # sesión de arriba sí lo muestra, para que el investigador vea qué
+                # pasó en esa sesión.
+                ranking_para_grupos = ranking[ranking["dia_sesion"] != 5]
+                comparacion_grupos = Recomendador().comparar_grupos_terapeutica_vs_preferencia(ranking_para_grupos)
                 contenedor_resultado.content = self._construir_resultado_recomendacion(
                     ranking, alguna_preferencia, comparacion_grupos
                 )

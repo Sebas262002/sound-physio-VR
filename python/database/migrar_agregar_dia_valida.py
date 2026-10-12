@@ -1,6 +1,6 @@
 """Migración: agrega las columnas 'dia_sesion' y 'valida' a la tabla 'sesiones'.
 
-- dia_sesion INT NULL: día del protocolo (1 a 4). Las sesiones ya guardadas
+- dia_sesion INT NULL: día del protocolo (1 a 5). Las sesiones ya guardadas
   quedan con NULL; analisis_intrasujeto.py infiere su día por orden cronológico.
 - valida BIT NOT NULL DEFAULT 1: 0 marca una sesión descartada del análisis
   (repetida o con señal defectuosa), ver BaseDatosTesis.marcar_sesion_invalida().

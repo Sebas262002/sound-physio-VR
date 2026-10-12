@@ -7,6 +7,10 @@ public class SentarseTrigger : MonoBehaviour
     [SerializeField] private string tagXROrigin = "MainCamera"; // detecta la cámara VR
     [SerializeField] private float tiempoParaConfirmar = 2f;    // segundos que debe estar sentado
 
+    [Header("Reorientación")]
+    [SerializeField] private Transform xrOrigin;         // arrastra tu XR Origin (VR)
+    [SerializeField] private Transform direccionDeseada;  // Empty apuntando hacia donde debe quedar mirando
+
     [Header("Eventos")]
     public UnityEvent onUsuarioSentado;
     public UnityEvent onUsuarioSeLevanta;
@@ -48,9 +52,21 @@ public class SentarseTrigger : MonoBehaviour
             if (tiempoDentro >= tiempoParaConfirmar)
             {
                 sesionYaIniciada = true;
+                ReorientarUsuario();
                 onUsuarioSentado?.Invoke();
                 Debug.Log("[Silla] Usuario sentado confirmado - iniciando sesión");
             }
         }
+    }
+
+    private void ReorientarUsuario()
+    {
+        if (xrOrigin == null || direccionDeseada == null) return;
+
+        float anguloActualCamara = Camera.main.transform.eulerAngles.y;
+        float anguloDeseado = direccionDeseada.eulerAngles.y;
+        float diferencia = anguloDeseado - anguloActualCamara;
+
+        xrOrigin.RotateAround(Camera.main.transform.position, Vector3.up, diferencia);
     }
 }

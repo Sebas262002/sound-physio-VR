@@ -176,33 +176,56 @@ protocolo experimental en el Estado del Arte de la tesis, Cap. II).
 
 El protocolo corregido (ver obtener_protocolo_sesion_dia() y
 asignar_estimulos_dia1_dia3()) evalúa cada tipo de estímulo en su PROPIA
-sesión, en un día distinto, separadas por 24-48 horas:
+sesión, en un día distinto, separadas por 24-48 horas, y agrega una
+quinta sesión adaptativa al final:
 
     Día 1: baseline(120s) -> uno de los 3 tipos estandarizados,
            sorteado (300s) -> cierre(60s)
-    Día 2: baseline(120s) -> preferencia personal, canción #1 (300s) -> cierre(60s)
-    Día 3: baseline(120s) -> el tipo estandarizado restante que NO
-           salió en Día 1 (300s) -> cierre(60s)
-    Día 4: baseline(120s) -> preferencia personal, canción #2 —
-           DISTINTA a la de Día 2 (300s) -> cierre(60s)
+    Día 2: baseline(120s) -> preferencia personal, LA canción (300s) -> cierre(60s)
+    Día 3: baseline(120s) -> el MISMO tipo estandarizado del Día 1,
+           repetido (300s) -> cierre(60s)
+    Día 4: baseline(120s) -> preferencia personal, LA MISMA canción
+           del Día 2 (300s) -> cierre(60s)
+    Día 5: baseline(120s) -> repite la condición (terapéutica o
+           preferencia) que dio mejor resultado en los Días 1-4,
+           decidida automáticamente (300s) -> cierre(60s)
 
 Cada sesión captura 480s (8 min); con estabilización (30s default, no
 incluida en el protocolo, ver tiempo_estabilizacion_seg): 510s (8.5 min)
-de pared. Cuatro sesiones por participante en total, no una.
+de pared. Cinco sesiones por participante en total, no una.
 
-¿Por qué 2 sesiones de preferencia (Día 2 y Día 4) en vez de 1? La
-Hipótesis de la tesis (H1/H0, Cap. I) compara DOS GRUPOS — "frecuencias
-terapéuticas comunes" vs. "sonidos de preferencia personal" — no estímulos
-individuales entre sí. Con una sola sesión de preferencia, ese grupo
-quedaba representado por un único dato; agregar una segunda sesión (con
-una canción DISTINTA, no una repetición — evita que la segunda medición
-esté sesgada por habituación al MISMO estímulo) da más datos para ese
-grupo, dejando la comparación 2 sesiones terapéuticas vs. 2 sesiones de
-preferencia, simétrica en ambos lados. Ver
-Recomendador.comparar_grupos_terapeutica_vs_preferencia() (recomendador.py)
-para cómo se promedian esas 2 sesiones de cada grupo — SIEMPRE normalizando
-cada una contra el baseline de SU PROPIO día antes de promediar, nunca
-mezclando HR crudo de baselines distintos.
+¿Por qué se REPITE el mismo tipo estandarizado en Día 3 (y la misma
+canción en Día 4), en vez de usar un segundo tipo/canción distinto como
+en una versión anterior de este diseño? Por reproducibilidad: si Día 2 y
+Día 4 usaran canciones distintas, estaríamos comparando dos estímulos
+diferentes dentro de la misma categoría "preferencia" — el resultado
+dependería de cuáles canciones eligió cada participante y no sería
+replicable por otro investigador con otro grupo. Al repetir el MISMO
+estímulo (mismo tipo terapéutico, misma canción) en ambos días de su
+categoría, cada grupo queda anclado a un único estímulo bien definido:
+"cómo reacciona este participante ante ESTE tipo terapéutico" y "cómo
+reacciona ante ESTA canción", medido dos veces para promediar y reducir
+ruido — no "ante terapéuticas en general" ni "ante su preferencia en
+general". Ver Recomendador.comparar_grupos_terapeutica_vs_preferencia()
+(recomendador.py) para cómo se promedian esas 2 sesiones de cada grupo —
+SIEMPRE normalizando cada una contra el baseline de SU PROPIO día antes
+de promediar, nunca mezclando HR crudo de baselines distintos.
+
+¿Por qué una quinta sesión adaptativa (Día 5)? Es lo que justifica
+llamar "adaptativo" al sistema: en vez de que el protocolo sea
+completamente fijo de antemano, el Día 5 se decide EN FUNCIÓN de los
+resultados fisiológicos reales de ESE participante en los Días 1-4 — ver
+decidir_estimulo_dia5() y Recomendador.decidir_estimulo_dia5(). Esto es
+estrictamente aparte del contraste estadístico de la Hipótesis (H1/H0):
+como el Día 5 se elige A PROPÓSITO porque ya se sabe que esa condición
+dio mejor resultado, incluirlo en el promedio de su grupo sesgaría la
+comparación a su favor (sesgo de selección). Por eso
+analisis_intrasujeto.preparar_sesiones() y la comparación de grupos en
+la app EXCLUYEN el Día 5 por default — se reporta aparte, de forma
+descriptiva, como evidencia de que el sistema efectivamente se adapta a
+cada individuo (ver también el "aporte" discutido con el director: cuántos
+de los participantes, usando solo Días 1-4, tuvieron mejor resultado con
+terapéutica vs. con preferencia).
 
 ¿Por qué estos 3 tipos estandarizados (Binaural Theta, Solfeggio +
 isocrónico, Paisaje biofílico) y no otra combinación? Son los tres
@@ -220,17 +243,17 @@ de grabaciones con licencia incierta, los paisajes sonoros naturales que
 la literatura documenta con capacidad restauradora (Jin et al., 2026;
 Kawai et al., 2025; Long et al., 2023, 2024).
 
-¿Por qué se SORTEA cuál de los 3 le toca a Día 1 y a Día 3 en vez de
-fijarlo? Justamente porque el Estado del Arte concluye que ningún tipo
-domina sobre los demás — fijar arbitrariamente uno sería una decisión no
-justificada por la literatura. Cada participante termina evaluando 2 de
-los 3 tipos estandarizados (distintos entre participantes, salvo
-coincidencia del sorteo) más 2 mediciones de su propia preferencia
-personal (Días 2 y 4, canciones distintas). Ver
-asignar_estimulos_dia1_dia3() para el mecanismo exacto del sorteo de los
-tipos estandarizados (determinista por participante, sin necesitar
-guardar estado entre sesiones) — los Días 2 y 4 no se sortean, siempre
-son "preferencia", solo cambia qué canción trae el participante cada vez.
+¿Por qué se SORTEA cuál de los 3 le toca a Día 1 (y se repite en Día 3)
+en vez de fijarlo? Justamente porque el Estado del Arte concluye que
+ningún tipo domina sobre los demás — fijar arbitrariamente uno sería una
+decisión no justificada por la literatura. Cada participante termina
+evaluando 1 de los 3 tipos estandarizados (distinto entre participantes,
+según el sorteo), repetido en Día 1 y Día 3, más su propia canción de
+preferencia personal, repetida en Día 2 y Día 4. Ver
+asignar_estimulos_dia1_dia3() para el mecanismo exacto del sorteo
+(determinista por participante, sin necesitar guardar estado entre
+sesiones) — los Días 2 y 4 no se sortean, siempre son "preferencia", con
+la MISMA canción en ambos días.
 
 Todo esto se contrasta contra la condición que de verdad importa para la
 hipótesis central de la tesis: la preferencia sonora personal del
@@ -265,14 +288,16 @@ resuelve, mapea y reproduce exactamente igual que los bloques de
 estímulo estandarizado (mismo pipeline de _resolver_ruta_estimulo() /
 reproducir_por_duracion()) — la única diferencia es que su WAV no sale
 de audio_estimulos/ sino del parámetro preferencia_wav (el audio que el
-participante trae de antemano). Al usar la MISMA estructura de sesión
-(baseline 120s + estímulo 300s + cierre 60s) que Día 1 y Día 3, su
-métrica HRV/HR/respiración queda directamente comparable con las de los
-tipos estandarizados sin ningún ajuste adicional — la comparación
-"terapéuticas vs. preferencia" (el hallazgo central de la tesis, ver
+participante trae de antemano, reutilizado tal cual en Día 2 y Día 4).
+Al usar la MISMA estructura de sesión (baseline 120s + estímulo 300s +
+cierre 60s) que Día 1 y Día 3, su métrica HRV/HR/respiración queda
+directamente comparable con las de los tipos estandarizados sin ningún
+ajuste adicional — la comparación "terapéuticas vs. preferencia" (el
+hallazgo central de la tesis, ver
 Recomendador.comparar_grupos_terapeutica_vs_preferencia() en
-recomendador.py) agrupa las 4 sesiones de un mismo participante en esos
-2 grupos (Días 1+3 vs. Días 2+4) y promedia dentro de cada uno.
+recomendador.py) agrupa las 4 sesiones ORIGINALES de un mismo
+participante (Días 1-4, nunca el Día 5 — ver más arriba) en esos 2
+grupos (Días 1+3 vs. Días 2+4) y promedia dentro de cada uno.
 
 PERSISTENCIA EN SQL SERVER (guardar_en_bd):
 Además de los 3 archivos locales (CSV/WAV/JSON, que SIEMPRE se guardan —
@@ -325,16 +350,18 @@ from reproductor_estimulos import ReproductorEstimulos  # noqa: E402
 from analizar_sesion_completa import analizar_metricas_sesion, _generar_reporte_md  # noqa: E402
 from bd_sqlserver import BaseDatosTesis, mapear_bloque_a_prueba  # noqa: E402
 from vr.unity_osc import UnityOSC  # noqa: E402
+from recomendador import Recomendador  # noqa: E402
 
 CARPETA_ESTIMULOS = Path(r"C:\Tesis_Kevin\audio_estimulos")
 CARPETA_SESIONES = Path(r"C:\Tesis_Kevin\datos\sesiones")
 
 
-# Los 3 tipos de estímulo estandarizado que compiten por Día 1 y Día 3 (ver
-# PROTOCOLO EXPERIMENTAL FINAL DE LA TESIS más arriba). Cada participante
-# recibe 2 de estos 3 (uno por día, sorteados por asignar_estimulos_dia1_dia3());
-# el tercero simplemente no se le aplica a ese participante en particular.
-# Estos son los "nombre" de bloque que espera _resolver_ruta_estimulo().
+# Los 3 tipos de estímulo estandarizado que compiten por el sorteo de Día 1
+# (ver PROTOCOLO EXPERIMENTAL FINAL DE LA TESIS más arriba). Cada participante
+# recibe 1 de estos 3 (sorteado por asignar_estimulos_dia1_dia3(), repetido en
+# Día 1 y Día 3); los otros 2 simplemente no se le aplican a ese participante
+# en particular. Estos son los "nombre" de bloque que espera
+# _resolver_ruta_estimulo().
 TIPOS_ESTANDARIZADOS = ["binaural_theta", "solfeggio_isocronico_528Hz", "paisaje_biofilico"]
 
 # Skybox de Unity por bloque, solo relevante si usar_vr=True (ver
@@ -354,13 +381,17 @@ _AMBIENTE_VR_POR_BLOQUE = {
 
 
 def asignar_estimulos_dia1_dia3(participante_id: str, semilla: Optional[int] = None) -> tuple[str, str]:
-    """Sortea qué 2 de los 3 tipos estandarizados le tocan a Día 1 y Día 3.
+    """Sortea qué tipo estandarizado le toca a Día 1, y lo repite en Día 3.
 
     Ver "¿Por qué se SORTEA cuál de los 3 le toca...?" en el docstring del
     módulo: como el Estado del Arte no encuentra un tipo consistentemente
     superior a los demás, el sistema sortea en vez de fijar uno
-    arbitrariamente. Día 2 siempre es la preferencia personal — no
-    participa de este sorteo.
+    arbitrariamente. El sorteo ocurre una sola vez por participante (Día
+    1); Día 3 repite ese mismo tipo en vez de sortear entre los 2
+    restantes, para que la comparación terapéutica Día1/Día3 use el mismo
+    estímulo dos veces y sea reproducible, igual que Día2/Día4 ahora
+    repiten la misma canción de preferencia. Día 2 siempre es la
+    preferencia personal — no participa de este sorteo.
 
     Reproducibilidad: si semilla es None (default), la asignación se
     deriva de forma determinista de participante_id (mismo participante
@@ -378,15 +409,53 @@ def asignar_estimulos_dia1_dia3(participante_id: str, semilla: Optional[int] = N
             un hash estable (CRC32) de participante_id como semilla.
 
     Returns:
-        tuple[str, str]: (tipo_dia1, tipo_dia3) — dos valores distintos
-            de TIPOS_ESTANDARIZADOS. El tercer tipo (no devuelto) es el
-            que NO se le aplica a este participante.
+        tuple[str, str]: (tipo_dia1, tipo_dia3) — el mismo valor
+            repetido dos veces, uno de TIPOS_ESTANDARIZADOS. Los otros 2
+            tipos (no devueltos) simplemente no se le aplican a este
+            participante.
     """
     if semilla is None:
         semilla = zlib.crc32(participante_id.encode("utf-8"))
     rng = np.random.default_rng(semilla)
     orden = rng.permutation(TIPOS_ESTANDARIZADOS)
-    return str(orden[0]), str(orden[1])
+    return str(orden[0]), str(orden[0])
+
+
+def decidir_estimulo_dia5(participante_id: str) -> str:
+    """Consulta la BD y decide qué tipo de estímulo le toca a la sesión adaptativa (Día 5).
+
+    Esta es la pieza que hace al sistema "adaptativo": compara, para este
+    participante, el score de relajación promedio de sus 2 sesiones
+    terapéuticas (Días 1 y 3) contra sus 2 sesiones de preferencia (Días 2
+    y 4), y repite en el Día 5 la condición que le funcionó mejor. Ver
+    Recomendador.decidir_estimulo_dia5() para la lógica de comparación —
+    esta función solo se encarga de traer los Días 1-4 desde SQL Server y
+    traducir el resultado ("terapeutica"/"preferencia") a un tipo concreto
+    de TIPOS_ESTANDARIZADOS o a "preferencia".
+
+    Args:
+        participante_id: ID del participante, ej. "P01".
+
+    Returns:
+        str: el tipo de estímulo a repetir en el Día 5 — "preferencia", o
+            uno de TIPOS_ESTANDARIZADOS (el mismo ya usado en Día 1/Día 3,
+            vía asignar_estimulos_dia1_dia3()).
+
+    Raises:
+        ValueError: Si todavía no hay datos válidos de los Días 1-4 para
+            este participante (hay que completar el protocolo antes de
+            poder decidir el Día 5).
+    """
+    bd = BaseDatosTesis()
+    sesiones = bd.obtener_sesiones_participante(participante_id)
+    pruebas_por_sesion = {
+        sesion["id_sesion"]: bd.obtener_pruebas_sesion(sesion["id_sesion"]) for sesion in sesiones
+    }
+    decision = Recomendador().decidir_estimulo_dia5(sesiones, pruebas_por_sesion)
+    if decision["condicion_ganadora"] == "preferencia":
+        return "preferencia"
+    tipo_dia1, _ = asignar_estimulos_dia1_dia3(participante_id)
+    return tipo_dia1
 
 
 def obtener_protocolo_sesion_dia(
@@ -405,9 +474,9 @@ def obtener_protocolo_sesion_dia(
     ~8 minutos.
 
     Cada tipo de estímulo se evalúa en su PROPIA sesión, en un día distinto
-    (24-48h de separación): Día 1 y Día 3 con dos de los tres tipos de
+    (24-48h de separación): Día 1 y Día 3 repiten el MISMO tipo de
     TIPOS_ESTANDARIZADOS (ver asignar_estimulos_dia1_dia3()), y Día 2 y
-    Día 4 con la preferencia personal (dos canciones distintas, ver
+    Día 4 repiten la MISMA canción de preferencia personal (ver
     PROTOCOLO EXPERIMENTAL FINAL DE LA TESIS) — pero esta función solo
     arma el protocolo de UN día; quién llama decide (o consulta
     asignar_estimulos_dia1_dia3()) qué día es y qué tipo le corresponde.
@@ -999,7 +1068,6 @@ def ejecutar_sesion_completa(
     tiempo_estabilizacion_seg: int = 30,
     reproducir_audio_real: bool = False,
     preferencia_wav: Optional[Path] = None,
-    preferencia_wav_2: Optional[Path] = None,
     dispositivo_salida_audio: Optional[int] = None,
     analizar_automaticamente: bool = True,
     guardar_en_bd: bool = True,
@@ -1039,20 +1107,20 @@ def ejecutar_sesion_completa(
             con una secuencia de bloques distinta a la del protocolo
             estándar de la tesis (ej. una prueba corta con el sensor real).
             Tiene prioridad sobre dia si ambos se indican.
-        dia: Si se indica (1, 2, 3 o 4), usa obtener_protocolo_sesion_dia()
+        dia: Si se indica (1, 2, 3, 4 o 5), usa obtener_protocolo_sesion_dia()
             (ver PROTOCOLO EXPERIMENTAL FINAL DE LA TESIS en el docstring
             del módulo): el protocolo estandarizado de UNA sesión de UN
             día (baseline 120s, un único estímulo de 300s, cierre 60s;
             480s capturados, 510s de pared con estabilización por
-            defecto). Día 2 siempre reproduce preferencia_wav (requerido,
-            lanza ValueError si no se indica) y Día 4 siempre reproduce
-            preferencia_wav_2 (una canción DISTINTA, también requerida) —
-            Días 1 y 3 usan tipo_estimulo_dia si se indica, o si no, el
-            resultado de asignar_estimulos_dia1_dia3(participante_id) —
-            así que llamar a esta función con dia=1 y luego, en otro día,
-            con dia=3 para el MISMO participante_id da automáticamente el
-            tipo complementario, sin tener que pasar nada más. Ignorado si
-            se indica protocolo_personalizado.
+            defecto). Día 2, Día 4 y (si corresponde) Día 5 siempre
+            reproducen preferencia_wav (requerido, lanza ValueError si no
+            se indica) — la MISMA canción en los tres casos. Días 1 y 3
+            usan tipo_estimulo_dia si se indica, o si no, el resultado de
+            asignar_estimulos_dia1_dia3(participante_id) — así que llamar
+            a esta función con dia=1 y luego, en otro día, con dia=3 para
+            el MISMO participante_id da automáticamente el mismo tipo, sin
+            tener que pasar nada más. Ignorado si se indica
+            protocolo_personalizado.
         tipo_estimulo_dia: Override manual del tipo de estímulo para Día 1
             o Día 3 (uno de sesion_completa.TIPOS_ESTANDARIZADOS) — evita
             el sorteo automático de asignar_estimulos_dia1_dia3(). Se
@@ -1072,16 +1140,12 @@ def ejecutar_sesion_completa(
             el sensor, sin sonar nada — el comportamiento que ya existía.
             Fuerza silencioso_estimulos=False internamente (no tiene
             sentido pedir audio real y a la vez pedir que no suene nada).
-        preferencia_wav: Ruta al audio de la PRIMERA canción de preferencia
-            personal del participante (Día 2). Solo se usa si
-            reproducir_audio_real=True y el protocolo tiene un bloque
-            cuyo nombre contiene "preferencia".
-        preferencia_wav_2: Ruta al audio de la SEGUNDA canción de
-            preferencia personal (Día 4) — una canción DISTINTA a
-            preferencia_wav, no una repetición (ver PROTOCOLO EXPERIMENTAL
-            FINAL en el docstring del módulo: Días 2 y 4 son ambos
-            "preferencia" para efectos de tipo_estimulo, pero cada uno con
-            su propio archivo). Solo se usa si dia == 4.
+        preferencia_wav: Ruta al audio de la canción de preferencia personal
+            del participante — la MISMA se usa en Día 2, Día 4 y, si la
+            condición ganadora resulta "preferencia", en Día 5 (ver
+            PROTOCOLO EXPERIMENTAL FINAL en el docstring del módulo). Solo
+            se usa si reproducir_audio_real=True y el protocolo tiene un
+            bloque cuyo nombre contiene "preferencia".
         dispositivo_salida_audio: Índice del dispositivo de salida a usar
             para reproducir los estímulos (ver listar_dispositivos_audio.py).
             None usa el dispositivo de salida por defecto del sistema.
@@ -1156,24 +1220,34 @@ def ejecutar_sesion_completa(
     if protocolo_personalizado is not None:
         protocolo = protocolo_personalizado
     elif dia is not None:
-        if dia not in (1, 2, 3, 4):
-            raise ValueError(f"dia debe ser 1, 2, 3 o 4 (recibido: {dia}).")
+        if dia not in (1, 2, 3, 4, 5):
+            raise ValueError(f"dia debe ser 1, 2, 3, 4 o 5 (recibido: {dia}).")
 
-        if dia == 2:
+        if dia in (2, 4):
+            # Día 4 repite la MISMA canción del Día 2 (ya no es una segunda
+            # canción distinta) — ver PROTOCOLO EXPERIMENTAL FINAL en el
+            # docstring del módulo.
             if preferencia_wav is None:
                 raise ValueError(
-                    "dia=2 requiere preferencia_wav: es el primer día de preferencia "
-                    "sonora personal del participante."
+                    f"dia={dia} requiere preferencia_wav: Día 2 y Día 4 usan la misma "
+                    "canción de preferencia personal del participante."
                 )
             tipo_dia = "preferencia"
-        elif dia == 4:
-            if preferencia_wav_2 is None:
-                raise ValueError(
-                    "dia=4 requiere preferencia_wav_2: es el segundo día de preferencia "
-                    "sonora personal del participante, con una canción DISTINTA a la del "
-                    "Día 2 (ver PROTOCOLO EXPERIMENTAL FINAL en el docstring del módulo)."
-                )
-            tipo_dia = "preferencia"
+        elif dia == 5:
+            # Si no se indica tipo_estimulo_dia explícito, se decide automáticamente
+            # consultando los resultados de los Días 1-4 en SQL Server — esto es lo
+            # que hace al sistema "adaptativo" (ver decidir_estimulo_dia5() y
+            # Recomendador.decidir_estimulo_dia5()). Pasar tipo_estimulo_dia a mano
+            # sigue soportado, para pruebas o si el investigador quiere forzar un
+            # valor sin depender de la BD.
+            tipo_dia5 = tipo_estimulo_dia if tipo_estimulo_dia is not None else decidir_estimulo_dia5(participante_id)
+            if tipo_dia5 == "preferencia":
+                if preferencia_wav is None:
+                    raise ValueError("dia=5 con estímulo 'preferencia' requiere preferencia_wav.")
+                tipo_dia = "preferencia"
+            else:
+                tipo_dia = tipo_dia5
+            print(f"Día 5 (adaptativa) de {participante_id}: estímulo decidido -> '{tipo_dia}'")
         elif tipo_estimulo_dia is not None:
             tipo_dia = tipo_estimulo_dia
         else:
@@ -1220,16 +1294,16 @@ def ejecutar_sesion_completa(
         # dejar que _buscar_estimulo() tire un FileNotFoundError confuso
         # más abajo, apuntando a una carpeta que ya no existe.
         raise ValueError(
-            "Debés indicar protocolo_personalizado=, dia=1/2/3/4, o protocolo_corto=True. "
+            "Debés indicar protocolo_personalizado=, dia=1/2/3/4/5, o protocolo_corto=True. "
             "Ya no existe un protocolo 'de ejemplo' implícito (ver PROTOCOLO POR DÍA en "
             "el docstring del módulo)."
         )
 
     if reproducir_audio_real:
-        # Día 4 usa la SEGUNDA canción (preferencia_wav_2), no la primera — ver
-        # PROTOCOLO EXPERIMENTAL FINAL en el docstring del módulo.
-        wav_preferencia_de_este_dia = preferencia_wav_2 if dia == 4 else preferencia_wav
-        protocolo = _resolver_audio_real(protocolo, wav_preferencia_de_este_dia)
+        # Día 2, Día 4 y Día 5 (si corresponde) usan la MISMA canción
+        # (preferencia_wav) — ver PROTOCOLO EXPERIMENTAL FINAL en el docstring
+        # del módulo.
+        protocolo = _resolver_audio_real(protocolo, preferencia_wav)
 
     duracion_total_protocolo = _calcular_duracion_total_protocolo(protocolo)
 

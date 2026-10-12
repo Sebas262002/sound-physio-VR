@@ -26,6 +26,16 @@ cd C:\Tesis_Kevin
   https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server
   (instalador de 64 bits, el que corresponde a la mayoría de instalaciones de Python en Windows).
 
+- **Git Bash** — necesario para el comando que crea las tablas la primera vez (paso 3.4), porque usa redirección `<` de tipo Unix que PowerShell no soporta.
+  - Si ya tienes Git instalado en Windows, ya tienes Git Bash: búscalo en el menú de inicio como "Git Bash".
+  - Si no lo tienes, descarga "Git for Windows" desde https://git-scm.com/downloads/win e instálalo con las opciones por defecto (Git Bash se incluye automáticamente).
+  - Alternativa sin instalar nada: usa `cmd.exe`, o el comando equivalente en PowerShell que se documenta en el paso 3.4.
+  - **(Opcional, no es necesario para levantar el proyecto)** Si en esta PC vas a hacer `git commit`, configura tu identidad una sola vez:
+    ```bash
+    git config --global user.name "Kevin Lechon"
+    git config --global user.email "kslechon@espe.edu.ec"
+    ```
+
 - **(Opcional) Sensor Wahoo TRACKR Heart Rate** — solo si vas a correr una sesión con hardware real (Bluetooth Low Energy).
 - **(Opcional) Meta Quest 2 + Unity** — solo si vas a correr una sesión con el entorno VR; sin esto la app funciona igual, con el switch de VR apagado.
 
@@ -69,13 +79,19 @@ La base de datos vive en un contenedor Docker (SQL Server 2022) definido en `doc
 
    Repite hasta que diga `healthy`.
 
-4. La primera vez que arranca el contenedor (volumen nuevo), la base `TesisKevin` y sus tablas **no existen todavía** — hay que crearlas corriendo el script de esquema una sola vez:
+4. La primera vez que arranca el contenedor (volumen nuevo), la base `TesisKevin` y sus tablas **no existen todavía** — hay que crearlas corriendo el script de esquema una sola vez. **Este paso se corre en Git Bash o en `cmd.exe`, no en PowerShell** (PowerShell no soporta la redirección `<` que usa este comando):
 
    ```bash
    docker exec -i tesiskevin-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "Fesa2026/*" -C -i /dev/stdin < docker/init_schema.sql
    ```
 
    (Si usas Git Bash en Windows y el comando falla por traducción de rutas, antepón `MSSQL_NO_PATHCONV=1` o `MSYS_NO_PATHCONV=1` al comando.)
+
+   **Si prefieres no usar Git Bash**, este es el equivalente en PowerShell:
+
+   ```powershell
+   Get-Content docker/init_schema.sql -Raw | docker exec -i tesiskevin-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "Fesa2026/*" -C -i /dev/stdin
+   ```
 
 **Notas:**
 - El contenedor queda con `restart: unless-stopped` — normalmente no hace falta repetir `docker compose up -d` después de reiniciar la PC, Docker Desktop lo vuelve a levantar solo (si Docker Desktop está configurado para iniciar con Windows).

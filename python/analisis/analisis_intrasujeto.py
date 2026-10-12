@@ -48,6 +48,16 @@ CARPETA_EXPORTADOS = Path(r"C:\Tesis_Kevin\resultados\exportados")
 ALFA = 0.05
 SESIONES_POR_CONDICION = 2  # protocolo: 2 terapéuticas (Días 1 y 3) + 2 de preferencia (Días 2 y 4)
 
+# El Día 5 ("adaptativa") repite a propósito el estímulo que YA dio mejor
+# resultado en los Días 1-4 para ese participante — por diseño, no es una
+# medición en igualdad de condiciones. Si se incluyera en este contraste
+# (H1/H0), estaríamos agregando una muestra elegida PORQUE se sabía que iba
+# a salir bien a favor del grupo ganador: sesgo de selección que invalida la
+# prueba pareada. Por eso preparar_sesiones() descarta el Día 5 por default
+# (ver DIAS_CONTRASTE_H1H0 más abajo); el Día 5 se reporta aparte, de forma
+# descriptiva, nunca dentro de tabla_por_participante()/comparar_condiciones().
+DIAS_CONTRASTE_H1H0 = (1, 2, 3, 4)
+
 METRICA_PRIMARIA = "delta_fc"
 METRICAS_SECUNDARIAS = ["delta_rmssd", "delta_sdnn", "likert_relajacion", "likert_confort"]
 ETIQUETAS_METRICAS = {
@@ -67,12 +77,20 @@ def preparar_sesiones(
     pruebas: pd.DataFrame,
     solo_validas: bool = True,
     excluir_participantes: Optional[list[str]] = None,
+    incluir_dia_5: bool = False,
 ) -> pd.DataFrame:
     """Une 'sesiones' y 'pruebas' y calcula los cambios respecto a la línea base.
 
     Cada fila del resultado es una prueba (un bloque de estímulo) con su
     baseline de la sesión a la que pertenece. Nunca se mezclan baselines de
     sesiones distintas: el reposo puede variar de un día a otro.
+
+    Por default excluye el Día 5 (ver DIAS_CONTRASTE_H1H0): esta función
+    alimenta el contraste estadístico de H1/H0, y el Día 5 es una sesión
+    adaptativa elegida a propósito para repetir el estímulo ganador — mezclarla
+    aquí sesgaría la comparación a favor de esa condición. incluir_dia_5=True
+    existe solo para reportes descriptivos fuera del contraste (p. ej. mostrar
+    qué pasó en la sesión adaptativa de un participante en el PDF).
 
     Args:
         sesiones: Tabla 'sesiones' (id_sesion, id_participante, fecha_hora,
@@ -83,6 +101,9 @@ def preparar_sesiones(
         solo_validas: Si True y existe la columna 'valida', descarta las
             sesiones marcadas como inválidas (valida = 0).
         excluir_participantes: IDs a dejar fuera (p. ej. sesiones piloto).
+        incluir_dia_5: Si False (default), descarta las filas con
+            dia_sesion == 5 antes de devolver el resultado — así ningún
+            llamador puede colar por error el Día 5 en el contraste H1/H0.
 
     Returns:
         pd.DataFrame: Columnas id_participante, id_sesion, dia_sesion,
@@ -123,6 +144,9 @@ def preparar_sesiones(
     datos["delta_fc"] = datos["hr_promedio"] - datos["hr_baseline"]
     datos["delta_rmssd"] = datos["rmssd"] - datos["rmssd_baseline"]
     datos["delta_sdnn"] = datos["sdnn"] - datos["sdnn_baseline"]
+
+    if not incluir_dia_5:
+        datos = datos[datos["dia_sesion"] != 5]
 
     return datos[columnas].sort_values(["id_participante", "dia_sesion"]).reset_index(drop=True)
 

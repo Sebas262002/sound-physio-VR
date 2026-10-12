@@ -42,25 +42,26 @@ ESQUEMA DE LA BASE (ya creado en SQL Server, este módulo no lo modifica):
         id_participante VARCHAR(10) PK, edad INT NULL, genero VARCHAR(10) NULL,
         fecha_registro DATETIME NOT NULL,
         consentimiento BIT NULL, observaciones VARCHAR(500) NULL,
-        ruta_preferencia_wav NVARCHAR(500) NULL,
-        ruta_preferencia_wav_2 NVARCHAR(500) NULL
+        ruta_preferencia_wav NVARCHAR(500) NULL
 
         NOTA: ruta_preferencia_wav se agregó para precargar el Día 2 de un
         participante que ya hizo Día 1 (ver actualizar_ruta_preferencia() y
-        _autocompletar_participante_existente() en app_investigador.py).
-        ruta_preferencia_wav_2 se agregó después, para el Día 4 (ver
-        PROTOCOLO EXPERIMENTAL FINAL en sesion_completa.py: Días 2 y 4 son
-        ambos de preferencia personal, pero con una canción DISTINTA cada
-        uno — ver actualizar_ruta_preferencia_2()). Si tu SQL Server
-        todavía no tiene estas columnas, correr una sola vez:
+        _autocompletar_participante_existente() en app_investigador.py). La
+        MISMA canción se reutiliza en Día 4 y, si corresponde, en Día 5 — ver
+        PROTOCOLO EXPERIMENTAL FINAL en sesion_completa.py. Si tu SQL Server
+        todavía no tiene esta columna, correr una sola vez:
 
             ALTER TABLE participantes ADD ruta_preferencia_wav NVARCHAR(500) NULL;
-            ALTER TABLE participantes ADD ruta_preferencia_wav_2 NVARCHAR(500) NULL;
 
-        mano_dominante EXISTIÓ y se ELIMINÓ (a pedido explícito del tutor: no
-        aportaba nada al análisis de la tesis, ver Hipótesis H1/H0). Si tu SQL
-        Server todavía tiene esa columna de una versión vieja, correr una vez:
+        ruta_preferencia_wav_2 y mano_dominante EXISTIERON y se ELIMINARON
+        (la primera porque el protocolo pasó a reutilizar una sola canción en
+        vez de pedir una segunda distinta; la segunda a pedido explícito del
+        tutor, no aportaba nada al análisis de la tesis — ver Hipótesis
+        H1/H0). Si tu SQL Server todavía tiene alguna de esas columnas de una
+        versión vieja, correr una vez (ver también
+        database/migrar_quitar_preferencia_2.py):
 
+            ALTER TABLE participantes DROP COLUMN ruta_preferencia_wav_2;
             ALTER TABLE participantes DROP COLUMN mano_dominante;
 
     sesiones:
@@ -68,7 +69,7 @@ ESQUEMA DE LA BASE (ya creado en SQL Server, este módulo no lo modifica):
         fecha_hora DATETIME NOT NULL, duracion_seg INT NULL,
         hr_baseline/rmssd_baseline/sdnn_baseline FLOAT NULL, notas VARCHAR(500) NULL,
         usa_vr BIT NOT NULL DEFAULT 0,
-        dia_sesion INT NULL (1-4 del protocolo), valida BIT NOT NULL DEFAULT 1
+        dia_sesion INT NULL (1-5 del protocolo), valida BIT NOT NULL DEFAULT 1
         (0 = sesión descartada del análisis, ver marcar_sesion_invalida()).
         Si tu SQL Server todavía no tiene dia_sesion/valida, correr una sola vez
         database/migrar_agregar_dia_valida.py (crear_sesion() sigue funcionando
@@ -433,7 +434,7 @@ class BaseDatosTesis:
             usa_vr: Si la sesión corrió con Meta Quest 2 (ver usar_vr en
                 ejecutar_sesion_completa(), sesion_completa.py) — puramente
                 informativo, no afecta ninguna métrica.
-            dia_sesion: Día del protocolo (1 a 4). None si no se conoce. Se
+            dia_sesion: Día del protocolo (1 a 5). None si no se conoce. Se
                 ignora (con una advertencia) si la tabla aún no tiene la
                 columna — ver database/migrar_agregar_dia_valida.py.
             valida: False si la sesión nace descartada del análisis (p. ej. se
@@ -554,32 +555,6 @@ class BaseDatosTesis:
             return True
         except (pyodbc.Error, ConnectionError) as error:
             logger.error(f"No se pudo actualizar la ruta de preferencia de {id_participante}: {error}")
-            return False
-
-    def actualizar_ruta_preferencia_2(self, id_participante: str, ruta_preferencia_wav_2: str) -> bool:
-        """Igual que actualizar_ruta_preferencia(), pero para la SEGUNDA canción de
-        preferencia personal (Día 4, ver PROTOCOLO EXPERIMENTAL FINAL en
-        sesion_completa.py: Días 2 y 4 son ambos de preferencia, con canciones
-        DISTINTAS — la primera vive en ruta_preferencia_wav, esta es la segunda).
-
-        Requiere la columna ruta_preferencia_wav_2 en la tabla participantes (ver
-        el ALTER TABLE en el docstring del módulo, sección ESQUEMA DE LA BASE).
-
-        Args:
-            id_participante: Identificador del participante.
-            ruta_preferencia_wav_2: Ruta al WAV de la segunda canción de preferencia.
-
-        Returns:
-            bool: True si se actualizó correctamente; False si falló.
-        """
-        try:
-            self._ejecutar(
-                "UPDATE participantes SET ruta_preferencia_wav_2 = ? WHERE id_participante = ?",
-                (ruta_preferencia_wav_2, id_participante),
-            )
-            return True
-        except (pyodbc.Error, ConnectionError) as error:
-            logger.error(f"No se pudo actualizar la segunda ruta de preferencia de {id_participante}: {error}")
             return False
 
     def actualizar_duracion_sesion(self, id_sesion: int, duracion_seg: int) -> bool:

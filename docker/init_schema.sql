@@ -24,8 +24,7 @@ CREATE TABLE participantes (
     fecha_registro          DATETIME        NOT NULL,
     consentimiento          BIT             NULL,
     observaciones           VARCHAR(500)    NULL,
-    ruta_preferencia_wav    NVARCHAR(500)   NULL,
-    ruta_preferencia_wav_2  NVARCHAR(500)   NULL
+    ruta_preferencia_wav    NVARCHAR(500)   NULL
 );
 GO
 

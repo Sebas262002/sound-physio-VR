@@ -255,6 +255,7 @@ def _calcular_ranking(pruebas: list[dict]) -> pd.DataFrame:
         # una, ver PROTOCOLO POR DÍA en sesion_completa.py) — buscar por "condicion" en
         # pruebas_por_tipo ya no identifica una sola prueba de forma única.
         resultado_fila["_id_sesion"] = p.get("_id_sesion")
+        resultado_fila["_dia_sesion"] = p.get("_dia_sesion")
         resultados.append(resultado_fila)
 
     return (
@@ -1100,6 +1101,7 @@ def generar_reporte_pdf(
             p["_rmssd_baseline"] = sesion_dia.get("rmssd_baseline")
             p["_id_sesion"] = sesion_dia.get("id_sesion")
             p["_fecha_sesion"] = sesion_dia.get("fecha_hora")
+            p["_dia_sesion"] = sesion_dia.get("dia_sesion")
             pruebas_por_tipo[p["tipo_estimulo"]] = p
             prueba_por_sesion[p["_id_sesion"]] = p
             pruebas_todas.append(p)
@@ -1108,8 +1110,18 @@ def generar_reporte_pdf(
     ranking = _calcular_ranking(pruebas)
     # Resultado PRIMARIO de la tesis (H1/H0, Anexo 5 página 19): 2 grupos
     # pooleados — terapéuticas (Días 1+3) vs. preferencia (Días 2+4) — ver
-    # Recomendador.comparar_grupos_terapeutica_vs_preferencia().
-    comparacion_grupos = Recomendador().comparar_grupos_terapeutica_vs_preferencia(ranking)
+    # Recomendador.comparar_grupos_terapeutica_vs_preferencia(). El Día 5
+    # (adaptativa) repite a propósito la condición que ya dio mejor resultado
+    # en los Días 1-4 — incluirlo acá sesgaría el grupo ganador con una
+    # muestra elegida porque se sabía que iba a salir bien (mismo criterio que
+    # DIAS_CONTRASTE_H1H0 en analisis_intrasujeto.py). Se excluye SOLO de esta
+    # tarjeta primaria; "ranking" completo (con Día 5) sigue mostrándose en el
+    # detalle secundario por sesión, más abajo.
+    if ranking.empty:
+        ranking_para_grupos = ranking
+    else:
+        ranking_para_grupos = ranking[ranking["_dia_sesion"] != 5]
+    comparacion_grupos = Recomendador().comparar_grupos_terapeutica_vs_preferencia(ranking_para_grupos)
 
     carpeta_salida.mkdir(parents=True, exist_ok=True)
     ruta = carpeta_salida / f"{id_participante}_reporte_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
