@@ -42,30 +42,42 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 
 
-async def escanear_dispositivos(timeout_seg: float = 15.0) -> list[BLEDevice]:
+SERVICIO_FRECUENCIA_CARDIACA = "0000180d-0000-1000-8000-00805f9b34fb"
+"""UUID estándar Bluetooth SIG del "Heart Rate Service": todo sensor de
+frecuencia cardíaca BLE (de cualquier marca) lo anuncia, incluso cuando el
+nombre del dispositivo no viene en el paquete de anuncio que bleak lee por
+default (algunos sensores, el Wahoo TRACKR incluido, solo entregan el
+nombre en una respuesta de escaneo adicional que Windows sí pide pero
+BleakScanner.discover() no pide por default). Filtrar por este UUID en vez
+de por el nombre encuentra el sensor aunque aparezca como "(sin nombre)".
+"""
+
+
+async def escanear_dispositivos(timeout_seg: float = 15.0) -> dict[BLEDevice, list[str]]:
     """Escanea dispositivos BLE cercanos durante timeout_seg segundos.
 
     Args:
         timeout_seg: Duración del escaneo, en segundos (default 15.0).
 
     Returns:
-        list[BLEDevice]: Dispositivos BLE encontrados, cada uno con
-            atributos .name (str o None) y .address (str, la MAC).
+        dict[BLEDevice, list[str]]: Dispositivos BLE encontrados, mapeados a
+            la lista de UUID de servicio que cada uno anuncia (puede venir
+            vacía si el dispositivo no anuncia servicios).
     """
     print(f"Escaneando dispositivos BLE durante {timeout_seg:.0f} segundos...")
     print("(asegúrate de que el sensor Wahoo TRACKR HR esté encendido y cerca)\n")
 
-    # BleakScanner.discover() es la forma más simple de bleak: abre el escaneo,
-    # espera timeout_seg segundos recolectando anuncios, y lo cierra solo
-    dispositivos = await BleakScanner.discover(timeout=timeout_seg)
-    return dispositivos
+    # return_adv=True devuelve también los AdvertisementData de cada
+    # dispositivo (incluye .service_uuids), no solo el BLEDevice básico
+    resultado = await BleakScanner.discover(timeout=timeout_seg, return_adv=True)
+    return {dispositivo: adv.service_uuids for dispositivo, adv in resultado.values()}
 
 
-def _imprimir_tabla_dispositivos(dispositivos: list[BLEDevice]) -> None:
-    """Imprime una tabla alineada con nombre y MAC de cada dispositivo encontrado.
+def _imprimir_tabla_dispositivos(dispositivos: dict[BLEDevice, list[str]]) -> None:
+    """Imprime una tabla alineada con nombre, MAC y servicios de cada dispositivo.
 
     Args:
-        dispositivos: Lista devuelta por escanear_dispositivos().
+        dispositivos: Diccionario devuelto por escanear_dispositivos().
     """
     print(f"=== Dispositivos BLE encontrados: {len(dispositivos)} ===\n")
 
@@ -78,28 +90,34 @@ def _imprimir_tabla_dispositivos(dispositivos: list[BLEDevice]) -> None:
     ancho_nombre = max((len(dispositivo.name or "(sin nombre)") for dispositivo in dispositivos))
     ancho_nombre = max(ancho_nombre, len("Nombre"))
 
-    encabezado = f"{'Nombre':<{ancho_nombre}}  {'MAC':<17}"
+    encabezado = f"{'Nombre':<{ancho_nombre}}  {'MAC':<17}  {'¿Frec. cardíaca?':<17}"
     print(encabezado)
     print("-" * len(encabezado))
 
-    for dispositivo in dispositivos:
+    for dispositivo, uuids in dispositivos.items():
         nombre = dispositivo.name or "(sin nombre)"
-        print(f"{nombre:<{ancho_nombre}}  {dispositivo.address:<17}")
+        es_cardiaco = "<-- SÍ (este es)" if SERVICIO_FRECUENCIA_CARDIACA in uuids else ""
+        print(f"{nombre:<{ancho_nombre}}  {dispositivo.address:<17}  {es_cardiaco}")
 
 
-def _buscar_wahoo(dispositivos: list[BLEDevice]) -> list[BLEDevice]:
-    """Filtra los dispositivos cuyo nombre contenga 'wahoo' o 'trackr' (sin distinguir mayúsculas).
+def _buscar_wahoo(dispositivos: dict[BLEDevice, list[str]]) -> list[BLEDevice]:
+    """Filtra los dispositivos que anuncian el Heart Rate Service o cuyo nombre
+    contenga 'wahoo'/'trackr' (sin distinguir mayúsculas).
+
+    El filtro por servicio va primero porque es el confiable: algunos
+    sensores, el Wahoo TRACKR incluido, no siempre entregan el nombre en el
+    paquete de anuncio que lee bleak (ver SERVICIO_FRECUENCIA_CARDIACA).
 
     Args:
-        dispositivos: Lista devuelta por escanear_dispositivos().
+        dispositivos: Diccionario devuelto por escanear_dispositivos().
 
     Returns:
         list[BLEDevice]: Subconjunto de dispositivos que coinciden con el sensor buscado.
     """
     coincidencias = []
-    for dispositivo in dispositivos:
+    for dispositivo, uuids in dispositivos.items():
         nombre = (dispositivo.name or "").lower()
-        if "wahoo" in nombre or "trackr" in nombre:
+        if SERVICIO_FRECUENCIA_CARDIACA in uuids or "wahoo" in nombre or "trackr" in nombre:
             coincidencias.append(dispositivo)
     return coincidencias
 

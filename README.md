@@ -126,6 +126,21 @@ Esto conecta, registra un participante de prueba (`P999`), crea una sesión con 
 
 Más detalle de la base de datos (migración de sesiones piloto en CSV, esquema completo, etc.) en `python/database/README.md`.
 
+### 5.1 Conectarte con DBeaver (opcional)
+
+Si prefieres inspeccionar la base con DBeaver en vez de solo por código, crea una conexión nueva de tipo **SQL Server** con estos datos (los mismos del `.env`):
+
+| Campo | Valor |
+|---|---|
+| Host | `localhost` |
+| Puerto | `1433` |
+| Base de datos | `TesisKevin` |
+| Usuario | `sa` |
+| Contraseña | `Fesa2026/*` |
+| Autenticación | SQL Server Authentication |
+
+Si DBeaver pide confirmar el certificado SSL ("Trust server certificate" / "Encrypt"), actívalo — la conexión es local, no hay riesgo.
+
 ## 6. Correr la app
 
 ```bash
@@ -153,15 +168,20 @@ Se abre una ventana de escritorio (Flet) con 5 vistas: Inicio, Nueva sesión, Se
 
 **C. Día 3** (mismo flujo que A, con el otro tipo de estímulo sorteado).
 
-**D. Día 4 (canción de preferencia DISTINTA a la de Día 2):**
+**D. Día 4 (repite la MISMA canción de preferencia del Día 2):**
 1. Mismo ID — debería sugerir Día 4 tras completar 1, 2 y 3.
-2. Verifica que pida la ruta de la **segunda** canción de preferencia y que sea obligatoria.
+2. Verifica que la app reutilice automáticamente la misma ruta de audio de preferencia guardada en el Día 2 (ya no pide una segunda canción distinta).
 3. Corre la sesión.
 
 **E. Resultado de 2 grupos (el resultado central de la tesis):**
 1. Con las 4 sesiones de `P999` registradas, ve a "Análisis" → pestaña "Recomendación".
 2. Selecciona `P999` y calcula — debe aparecer primero la comparación de 2 grupos (frecuencias terapéuticas Días 1+3 vs. preferencia Días 2+4), y debajo el detalle por sesión.
 3. Genera el reporte PDF del participante y confirma que las Páginas 1 y 3 muestren esa misma comparación.
+
+**E.1 Día 5 (sesión adaptativa):**
+1. Con las 4 sesiones de `P999` ya registradas y la recomendación calculada (paso E), vuelve a escribir el mismo ID — debería sugerir Día 5 automáticamente.
+2. Registra y corre la sesión: el sistema reutiliza el estímulo de la condición (terapéutica o preferencia) que obtuvo mejor score en los Días 1-4, sin pedir una nueva configuración de audio.
+3. En "Análisis" → "Recomendación", confirma que el Día 5 aparece en el ranking detallado por sesión, pero que la comparación principal de 2 grupos (Días 1+3 vs. 2+4) no cambia al incluirlo.
 
 **F. (Opcional) Hardware real:**
 - **Sensor Wahoo:** activa el switch de sensor real antes de registrar — el escaneo BLE tarda unos 12 segundos en detectarlo.

@@ -42,6 +42,9 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")  # consola de Windows (cp1252) no soporta Δ, ΔFC, etc.
+
 CARPETA_GRAFICAS = Path(r"C:\Tesis_Kevin\resultados\graficas")
 CARPETA_EXPORTADOS = Path(r"C:\Tesis_Kevin\resultados\exportados")
 

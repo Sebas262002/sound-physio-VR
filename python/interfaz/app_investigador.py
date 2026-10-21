@@ -197,22 +197,30 @@ CARPETA_EXPORTS = Path(r"C:\Tesis_Kevin\resultados\exportados")
 CARPETA_BACKUPS = Path(r"C:\Tesis_Kevin\datos\backups")
 RUTA_LOGO_ESPE = Path(__file__).parent / "assets" / "logo_espe.png"
 
-# Duraciones usadas por ESTA app — decisión explícita, mitad y mitad:
+# Duraciones usadas por ESTA app — decisión explícita:
+#   - DURACION_BASELINE_SEG sigue el Estado del Arte al pie de la letra: 120s
+#     (2 min) es la duración de reposo basal usada en el diseño experimental de
+#     la tesis, suficiente para que RMSSD/SDNN sean confiables (Task Force
+#     ESC/NASPE 1996; Shaffer & Ginsberg, 2017, reportan RMSSD confiable desde
+#     1 min). Para que una sesión real cuente como dato de tesis, el baseline
+#     tiene que durar esto, no menos.
 #   - DURACION_ESTIMULO_SEG SÍ sigue el Estado del Arte al pie de la letra: 300s
 #     (5 min) es el mínimo que exige Task Force ESC/NASPE 1996 para RMSSD/SDNN
 #     confiables, y la duración que Jin et al. (2026) y Liu & Li (2026) validaron
 #     como óptima de inmersión (ver mismo rationale en generador_tonos.py, donde
 #     los WAV ya se generan a 300s). Para que una sesión real cuente como dato de
 #     tesis, el estímulo tiene que durar esto, no menos.
-#   - DURACION_BASELINE_SEG y DURACION_CIERRE_SEG se dejan cortos (15s) A PROPÓSITO
-#     (a pedido explícito del usuario) en vez de los 120s que el Task Force
-#     recomienda para un baseline con margen de confiabilidad completo — el
-#     mismo trade-off de SDNN de baseline ya documentado antes, asumido a
-#     conciencia para no alargar cada sesión con silencio.
+#   - DURACION_CIERRE_SEG se deja corto (15s) A PROPÓSITO (a pedido explícito del
+#     usuario) en vez de los 60s documentados en el Capítulo III — el cierre no
+#     entra en ningún cálculo de ΔFC/ΔRMSSD/ΔSDNN (ver PERÍODO DE ESTABILIZACIÓN
+#     y el bloque "cierre" en sesion_completa.py), así que acortarlo no afecta la
+#     validez de ningún dato de tesis, solo el tiempo de pared de la sesión.
+#     OJO: si se deja así, el Capítulo III debe actualizarse para decir 15s en
+#     vez de 60s (y recalcular la duración total de la sesión).
 # Ya no hay bloques "descanso": el protocolo por día es baseline -> UN estímulo ->
 # cierre (ver obtener_protocolo_sesion_dia()), nunca los 4 tipos seguidos en la
 # misma sesión.
-DURACION_BASELINE_SEG = 15
+DURACION_BASELINE_SEG = 120
 DURACION_ESTIMULO_SEG = 300
 DURACION_CIERRE_SEG = 15
 
