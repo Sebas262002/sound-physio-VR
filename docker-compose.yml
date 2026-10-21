@@ -4,7 +4,7 @@ services:
     container_name: tesiskevin-sql
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "Fesa2026/*"
+      MSSQL_SA_PASSWORD: "${DB_PASSWORD}"
       MSSQL_PID: "Express"
     ports:
       - "1433:1433"
