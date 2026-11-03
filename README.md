@@ -104,10 +104,10 @@ La base de datos vive en un contenedor Docker (SQL Server 2022) definido en `doc
 
 Si vas a borrar la carpeta vieja del proyecto en otra PC y pegar una copia nueva (de un disco externo, por ejemplo), lo más simple y seguro es borrar también el volumen de Docker viejo y arrancar uno 100% nuevo — así te evitas que la contraseña SA vieja de esa PC no coincida con la de tu `.env`/`docker-compose.yml` actual (ver "Problemas comunes" más abajo).
 
-**Importante: estos comandos NO se escriben dentro de la ventana de Docker Desktop.** Docker Desktop solo necesita estar **abierto y corriendo** en segundo plano (es el "motor" que hace funcionar todo esto) — los comandos se escriben en una terminal normal de Windows (PowerShell, `cmd.exe` o Git Bash), exactamente igual que cualquier otro comando de este README. Pasos:
+**Dónde se escriben estos comandos:** en cualquier terminal normal de Windows — PowerShell, `cmd.exe`, Git Bash, **o también la pestaña "Terminal" que tiene la propia ventana de Docker Desktop** (abajo, junto a la lista de "Containers" — es un PowerShell normal, solo que integrado ahí). Cualquiera de esas opciones funciona igual. Pasos:
 
-1. Abre **Docker Desktop** (la aplicación con el ícono de la ballena) y espera a que termine de cargar — no hace falta hacer nada más ahí, solo dejarlo corriendo.
-2. Abre una terminal (PowerShell, `cmd.exe` o Git Bash — la que prefieras).
+1. Abre **Docker Desktop** (la aplicación con el ícono de la ballena) y espera a que termine de cargar.
+2. Abre una terminal: PowerShell/`cmd.exe`/Git Bash por separado, o la pestaña "Terminal" de abajo en la propia ventana de Docker Desktop.
 3. Ubícate en la raíz del proyecto ya pegado:
    ```bash
    cd C:\Tesis_Kevin
