@@ -29,10 +29,22 @@ Si un CSV no tiene su JSON de eventos correspondiente (mismo sufijo de
 fecha/hora) — pasó con una sesión temprana de P01, antes de que existiera
 el JSON de eventos — esa sesión se omite con una advertencia, en vez de
 fallar toda la migración.
+
+CORRER ESTE SCRIPT MÁS DE UNA VEZ:
+Antes de insertar una sesión, se chequea si ya existe una fila en 'sesiones'
+con notas="Migrado desde <mismo nombre de CSV>" para ese participante — si
+ya existe, se omite (no se duplica). Esto hace seguro volver a correr el
+script sobre la misma carpeta (ej. tras agregar participantes nuevos): las
+sesiones ya migradas antes simplemente se saltan, no se cuentan dos veces.
+Además, cada corrida deja un registro con fecha en
+datos/migraciones_log/migracion_<fecha>_<hora>.txt, con el detalle de qué se
+migró y qué se omitió por ya existir — así, si corrés el script dos veces,
+el segundo .txt deja ver claramente que todo (o casi todo) ya estaba.
 """
 
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -47,6 +59,7 @@ from analizar_sesion_completa import analizar_metricas_sesion  # noqa: E402
 logger = logging.getLogger(__name__)
 
 CARPETA_SESIONES = Path(r"C:\Tesis_Kevin\datos\sesiones")
+CARPETA_LOGS_MIGRACION = Path(r"C:\Tesis_Kevin\datos\migraciones_log")
 
 # Completa acá los datos demográficos REALES de cada participante antes de
 # migrar en serio (ej. "P01": {"edad": 24, "genero": "F"}).
@@ -129,6 +142,88 @@ def _valor_o_none(fila: pd.Series, columna: str) -> Optional[float]:
     return float(fila[columna])
 
 
+def _sesion_ya_migrada(bd: BaseDatosTesis, participante_id: str, nombre_csv: str) -> bool:
+    """True si ya existe una sesión migrada desde este mismo CSV para este participante.
+
+    Evita duplicar sesiones si el script se corre más de una vez sobre la
+    misma carpeta (ver CORRER ESTE SCRIPT MÁS DE UNA VEZ en el docstring del
+    módulo).
+    """
+    notas_esperadas = f"Migrado desde {nombre_csv}"
+    filas = bd.ejecutar_query(
+        "SELECT id_sesion FROM sesiones WHERE id_participante = ? AND notas = ?",
+        (participante_id, notas_esperadas),
+    )
+    return bool(filas)
+
+
+def _sesion_duplicada_por_metricas(
+    bd: BaseDatosTesis,
+    participante_id: str,
+    hr_baseline: Optional[float],
+    rmssd_baseline: Optional[float],
+    sdnn_baseline: Optional[float],
+    tolerancia: float = 0.05,
+) -> bool:
+    """True si ya existe una sesión de este participante con el MISMO hr/rmssd/sdnn
+    de baseline (dentro de una tolerancia chica, por redondeo de punto flotante).
+
+    Cubre el caso que _sesion_ya_migrada() NO detecta: una sesión que la app en
+    vivo (app_investigador.py) ya guardó directo en SQL Server (notas="Registrado
+    desde app_investigador.py", texto distinto al que arma este script), y cuyo
+    CSV de respaldo también está en datos/sesiones/. Sin este chequeo, migrar
+    ese CSV crearía una SEGUNDA fila de sesión para el mismo evento real — mismo
+    bug que _sesion_ya_migrada() evita, pero por la otra puerta.
+
+    Comparar por valores de baseline (no por fecha/hora) es necesario porque la
+    sesión en vivo se guarda en SQL Server recién DESPUÉS de que el participante
+    completa el Cuestionario post-sesión (ver _vista_cuestionario en
+    app_investigador.py) — ese paso lo hace una persona real, a su ritmo, así
+    que el tiempo entre "se escribió el CSV" y "se guardó en la base" no tiene
+    un límite confiable (se detectó en una prueba real que superó los 21
+    minutos). hr/rmssd/sdnn de baseline, en cambio, se calculan siempre con la
+    misma lógica (analizar_metricas_sesion) en los dos caminos, así que
+    coinciden exactamente para el mismo evento real, sin depender de relojes
+    ni de cuánto tardó nadie en responder nada.
+    """
+    if hr_baseline is None or rmssd_baseline is None or sdnn_baseline is None:
+        return False
+    for sesion in bd.obtener_sesiones_participante(participante_id):
+        if (
+            sesion.get("hr_baseline") is not None
+            and sesion.get("rmssd_baseline") is not None
+            and sesion.get("sdnn_baseline") is not None
+            and abs(sesion["hr_baseline"] - hr_baseline) <= tolerancia
+            and abs(sesion["rmssd_baseline"] - rmssd_baseline) <= tolerancia
+            and abs(sesion["sdnn_baseline"] - sdnn_baseline) <= tolerancia
+        ):
+            return True
+    return False
+
+
+def _escribir_log_migracion(migradas: list[str], omitidas: list[str]) -> Path:
+    """Escribe un .txt con fecha/hora en datos/migraciones_log/, con el detalle
+    de qué se migró y qué se omitió por ya existir. Sirve para notar de
+    inmediato si una corrida no hizo nada nuevo (todo omitido = ya se había
+    migrado antes).
+
+    Returns:
+        Path: ruta del archivo de log escrito.
+    """
+    CARPETA_LOGS_MIGRACION.mkdir(parents=True, exist_ok=True)
+    ahora = datetime.now()
+    ruta_log = CARPETA_LOGS_MIGRACION / f"migracion_{ahora.strftime('%Y%m%d_%H%M%S')}.txt"
+    with open(ruta_log, "w", encoding="utf-8") as f:
+        f.write(f"Migración corrida el {ahora.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        f.write(f"Sesiones migradas (nuevas): {len(migradas)}\n")
+        for linea in migradas:
+            f.write(f"  + {linea}\n")
+        f.write(f"\nSesiones omitidas (ya existían de una corrida anterior): {len(omitidas)}\n")
+        for linea in omitidas:
+            f.write(f"  = {linea}\n")
+    return ruta_log
+
+
 def migrar_todo(bd: BaseDatosTesis) -> None:
     """Recorre todos los participantes con sesiones en CSV y los migra a SQL Server.
 
@@ -140,13 +235,20 @@ def migrar_todo(bd: BaseDatosTesis) -> None:
 
     total_sesiones = 0
     total_pruebas = 0
+    migradas_detalle: list[str] = []
+    omitidas_detalle: list[str] = []
 
     for participante_id in participantes:
         print(f"\n=== {participante_id} ===")
         _registrar_participante_si_no_existe(bd, participante_id)
 
         for info in _emparejar_archivos_sesion(participante_id):
-            print(f"  Migrando sesión {info['sufijo']} ({info['csv'].name})...")
+            if _sesion_ya_migrada(bd, participante_id, info["csv"].name):
+                print(f"  Omitida (ya migrada antes): {info['csv'].name}")
+                omitidas_detalle.append(f"{participante_id}: {info['csv'].name} (ya migrada antes)")
+                continue
+
+            print(f"  Analizando sesión {info['sufijo']} ({info['csv'].name})...")
             try:
                 resultado = analizar_metricas_sesion(
                     participante_id=participante_id,
@@ -165,6 +267,11 @@ def migrar_todo(bd: BaseDatosTesis) -> None:
             sdnn_baseline = _valor_o_none(fila_baseline.iloc[0], "sdnn") if not fila_baseline.empty else None
             rmssd_baseline = _valor_o_none(fila_baseline.iloc[0], "rmssd") if not fila_baseline.empty else None
 
+            if _sesion_duplicada_por_metricas(bd, participante_id, hr_baseline, rmssd_baseline, sdnn_baseline):
+                print(f"  Omitida (ya estaba guardada en vivo por la app, mismos valores de baseline): {info['csv'].name}")
+                omitidas_detalle.append(f"{participante_id}: {info['csv'].name} (ya guardada en vivo por la app)")
+                continue
+
             id_sesion = bd.crear_sesion(
                 participante_id,
                 hr_baseline,
@@ -181,6 +288,7 @@ def migrar_todo(bd: BaseDatosTesis) -> None:
                 bd.actualizar_duracion_sesion(id_sesion, int(duracion_total))
 
             total_sesiones += 1
+            migradas_detalle.append(f"{participante_id}: {info['csv'].name}")
             pruebas_de_esta_sesion = 0
 
             for _, fila in tabla.iterrows():
@@ -213,7 +321,12 @@ def migrar_todo(bd: BaseDatosTesis) -> None:
 
             print(f"    id_sesion={id_sesion}, {pruebas_de_esta_sesion} prueba(s) registrada(s).")
 
-    print(f"\n=== Migración completa: {total_sesiones} sesión(es), {total_pruebas} prueba(s) registradas ===")
+    ruta_log = _escribir_log_migracion(migradas_detalle, omitidas_detalle)
+    print(
+        f"\n=== Migración completa: {total_sesiones} sesión(es) NUEVA(S), {total_pruebas} prueba(s) registradas, "
+        f"{len(omitidas_detalle)} sesión(es) omitida(s) por ya existir ==="
+    )
+    print(f"Registro de esta corrida guardado en: {ruta_log}")
 
 
 if __name__ == "__main__":

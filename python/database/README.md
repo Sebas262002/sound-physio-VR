@@ -49,15 +49,32 @@ python C:/Tesis_Kevin/python/database/bd_sqlserver.py
 
 Esto conecta, registra un participante de prueba (`P999`), crea una sesión con 4 pruebas (Solfeggio 432/528/639Hz + Preferencia), consulta lo insertado, y **borra todo al final** — no deja basura en la base.
 
-## 5. Migrar sesiones piloto ya guardadas en CSV
+## 5. Migrar sesiones ya guardadas en CSV a otra base de datos
 
-Si tienes sesiones de `datos/sesiones/*.csv` de antes de tener SQL Server integrado (P01–P12, etc.), este script las migra:
+Sirve para traer sesiones que ya existen como archivos (`datos/sesiones/*.csv`) a una base de datos SQL Server — por ejemplo, traer a casa las sesiones que se corrieron en la computadora de la universidad:
 
 ```bash
 python C:/Tesis_Kevin/python/database/migrar_csv_a_sqlserver.py
 ```
 
 **Antes de correrlo en serio:** edita `DEMOGRAFIA_PARTICIPANTES` al inicio de `migrar_csv_a_sqlserver.py` con la edad/género real de cada participante — los CSV nunca capturaron esos datos, así que sin completarlos quedan en `NULL` (con una observación que lo deja explícito, no se inventan valores).
+
+**No duplica sesiones si lo corres más de una vez.** Cada sesión se guarda en dos lugares a la vez: directo en SQL Server (al momento de correrla con la app) y como CSV/JSON de respaldo en `datos/sesiones/`. El script revisa, antes de insertar cada sesión del CSV, si ya existe en la base de datos — ya sea porque ese mismo CSV se migró antes, o porque la app ya la guardó en vivo con los mismos valores de HR/RMSSD/SDNN de baseline (no se compara por fecha/hora: el guardado en vivo ocurre recién después de que el participante completa el Cuestionario post-sesión, así que el tiempo entre el CSV y el guardado en la base no tiene un límite confiable). Si la encuentra, la omite y lo dice en el resumen final ("sesión(es) omitida(s) por ya existir"); si no, la migra. Cada corrida deja un registro en `datos/migraciones_log/` con el detalle de qué se migró y qué se omitió, por si quieres confirmarlo después.
+
+## 6. Borrar todo antes de empezar con participantes reales
+
+`limpiar_datos_piloto.py` borra por completo las sesiones de prueba/piloto (base de datos + archivos) para arrancar limpio desde `P001`:
+
+```bash
+python C:/Tesis_Kevin/python/database/limpiar_datos_piloto.py
+```
+
+Hace, en orden: (1) respalda el contenido actual de `participantes`/`sesiones`/`pruebas` a CSV en `datos/backups/` (lo único que sobrevive), (2) borra todas las filas de esas 3 tablas, (3) borra para siempre (no archiva) los archivos de `datos/sesiones/` (CSV/JSON/WAV), `datos/procesados/`, y todo el contenido de `resultados/exportados/`, `resultados/graficas/`, `resultados/reportes/` y `resultados/tablas/`. Pide confirmación explícita ("escribe 'si' para continuar") antes de borrar nada.
+
+**Muy importante — el orden correcto:**
+- Si tienes sesiones que SÍ quieres conservar (datos reales de participantes), **primero migra esas sesiones a otra base de datos (paso 5) y después, si quieres, limpia** la máquina original. Migrar copia la sesión a otro lado; limpiar después ya no le afecta a esa copia.
+- Si corres `limpiar_datos_piloto.py` **antes** de migrar, esa sesión se pierde para siempre — solo queda el respaldo CSV de la base de datos (sin WAV, sin gráficas, sin el detalle completo). No hay forma de recuperarla completa.
+- Pensado para correrse frente a datos de prueba/piloto que no importa perder (como una demo), nunca frente a datos reales que todavía no se hayan migrado a su destino final.
 
 ## Uso normal (integrado en `sesion_completa.py`)
 

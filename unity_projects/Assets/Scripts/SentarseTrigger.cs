@@ -19,6 +19,33 @@ public class SentarseTrigger : MonoBehaviour
     private float tiempoDentro = 0f;
     private bool sesionYaIniciada = false;
 
+    private Behaviour proveedorMovimiento;
+
+    void Awake()
+    {
+        BuscarProveedorMovimiento();
+    }
+
+    private void BuscarProveedorMovimiento()
+    {
+        if (xrOrigin == null) return;
+
+        foreach (Behaviour comportamiento in xrOrigin.GetComponents<Behaviour>())
+        {
+            if (comportamiento.GetType().Name == "ContinuousMoveProvider")
+            {
+                proveedorMovimiento = comportamiento;
+                Debug.Log("[Silla] Continuous Move Provider encontrado automáticamente");
+                break;
+            }
+        }
+
+        if (proveedorMovimiento == null)
+        {
+            Debug.LogWarning("[Silla] No se encontró Continuous Move Provider en el XR Origin asignado");
+        }
+    }
+
     void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag(tagXROrigin))
@@ -38,6 +65,7 @@ public class SentarseTrigger : MonoBehaviour
             if (sesionYaIniciada)
             {
                 sesionYaIniciada = false;
+                if (proveedorMovimiento != null) proveedorMovimiento.enabled = true;
                 onUsuarioSeLevanta?.Invoke();
                 Debug.Log("[Silla] Usuario se levantó");
             }
@@ -53,6 +81,7 @@ public class SentarseTrigger : MonoBehaviour
             {
                 sesionYaIniciada = true;
                 ReorientarUsuario();
+                if (proveedorMovimiento != null) proveedorMovimiento.enabled = false;
                 onUsuarioSentado?.Invoke();
                 Debug.Log("[Silla] Usuario sentado confirmado - iniciando sesión");
             }

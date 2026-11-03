@@ -1,58 +1,39 @@
-# Para la reunión con mi tutor
+# Qué copiar en la universidad (desde el disco externo)
 
-## Sobre el Capítulo III
+Checklist para el día de la recolección de datos reales. Todo lo que necesitas
+está en `D:\PRESENTACION_FINAL` (copia de `C:\Tesis_Kevin`, sin `unity_projects/`).
 
-Ya avancé corrigiendo varias cosas del Capítulo III que estaban mal o
-desactualizadas: dejé bien claro en todo el capítulo que se usa una sola
-canción de preferencia personal (no dos, como decía antes en algunas partes),
-corregí un conteo de iteraciones que estaba mal en una tabla, arreglé una
-referencia a una figura que estaba apuntando a la que no era, y ajusté la
-introducción del capítulo para que no prometa cosas que todavía no he
-escrito (como la parte de validación del instrumento y consideraciones
-éticas, que las tengo pendientes todavía).
+## 1. Copiar y SOBRESCRIBIR en la PC de la universidad (`C:\Tesis_Kevin`)
 
----
+- [ ] `python/` completo (ahí van los 3 archivos con los arreglos: Día repetido
+      bloqueado, campo de preferencia bloqueado en Día 4/5, migración sin
+      duplicados)
+- [ ] `docker-compose.yml`
+- [ ] `docker/`
+- [ ] `README.md`, `documentacion/` (opcionales, no afectan que la app corra)
 
-## Sobre el baseline: por qué lo dejé en 2 minutos y no en 15 segundos
+## 2. NO copiar / NO sobrescribir en la universidad
 
-Profe, quería explicarle por qué decidí dejar el baseline en 2 minutos, en
-vez de bajarlo a 15 segundos como habíamos hablado.
+- [ ] `unity_projects/` — la universidad ya tiene su propia copia, no se toca
+- [ ] `datos/` y `resultados/` — déjalas como están ahí; `limpiar_datos_piloto.py`
+      se encarga de vaciarlas de forma segura (con respaldo primero)
+- [ ] `.env` — solo revisa que la contraseña coincida, no lo sobrescribas sin
+      comprobar primero
+- [ ] `audio_estimulos/` — solo si cambió algo ahí, si no, ni falta
 
-Lo primero que quiero aclarar es que el baseline no es tiempo muerto. Mi
-sistema no mide simplemente "la frecuencia cardíaca durante el estímulo" —
-mide el **cambio** respecto a cómo estaba la persona antes de empezar. O sea,
-le resto la frecuencia cardíaca del baseline a la frecuencia cardíaca durante
-el estímulo, y esa resta es mi dato principal.
+## 3. Orden del día
 
-Y esto es importante porque cada participante llega distinto cada día —
-unos días más estresado, otros más relajado, por cosas que no tienen nada
-que ver con el sonido. Si no tengo un baseline confiable de ESE día, no puedo
-saber si el cambio que veo se debe al estímulo o simplemente a que la
-persona ya llegó distinta. El baseline es lo que me permite aislar el efecto
-real del sonido.
+1. Hacer la prueba/demo con el inge, usando lo que ya está en la universidad
+   (sin tocar nada todavía).
+2. Copiar/sobrescribir el código del punto 1 desde el disco externo.
+3. Correr `limpiar_datos_piloto.py` ahí mismo (borra la sesión de prueba del
+   inge y cualquier otra que quede, con respaldo automático antes de borrar).
+4. Confirmar que la base de datos quedó en 0 antes de empezar.
+5. Empezar a registrar a los 15 estudiantes reales.
 
-Ahora, el problema con 15 segundos es que no me alcanza para calcular bien
-las otras métricas que también uso, que son el RMSSD y el SDNN — estas
-miden la variabilidad del corazón, no solo el promedio. Para que esos
-números salgan confiables, se necesitan varios latidos seguidos. En 15
-segundos, una persona en reposo apenas da unos 17 o 20 latidos — eso es muy
-poco, el número me saldría con mucho ruido.
+## 4. Cuando termine con los 15
 
-Yo ya tengo citada en mi Estado del Arte una fuente (Shaffer & Ginsberg,
-2017) que dice que el RMSSD recién se puede medir de forma confiable desde
-1 minuto de registro. Entonces decidí dejarlo en 2 minutos, que me da un
-margen de seguridad por encima de ese mínimo, y además es consistente con el
-estándar que ya uso de referencia en todo el trabajo, que es el del Task
-Force de la Sociedad Europea de Cardiología de 1996.
-
-Y sobre lo que usted me comentó, de que esos 2 minutos se sienten como
-tiempo muerto — sí le hice caso a esa parte, pero lo resolví de otra forma:
-voy a poner un cartel de texto flotante en Unity, con las instrucciones
-rápidas de seguridad para el participante — algo como "no te pongas de pie,
-puedes mover la cabeza libremente" — pero ese cartel lo voy a mostrar
-ANTES de que empiece a contar el baseline, en los 30 segundos que ya tengo
-de estabilización al principio, que de por sí ya se descartan y no se usan
-para nada del análisis. Así la persona no está sentada sin hacer nada esos
-2 minutos — recibe las instrucciones justo antes — pero tampoco contamino
-la medición del baseline metiendo una tarea de lectura justo cuando estoy
-tratando de medir su estado de reposo real.
+Traer los datos a casa: primero **migrar** (`migrar_csv_a_sqlserver.py`, para
+que queden copiados en la base de datos de casa), y recién después, si se
+quiere, limpiar la de la universidad — nunca al revés, porque limpiar antes de
+migrar borra esa sesión para siempre.

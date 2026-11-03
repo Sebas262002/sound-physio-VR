@@ -307,8 +307,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 85
-  m_fontSizeBase: 85
+  m_fontSize: 40
+  m_fontSizeBase: 40
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -4066,9 +4066,10 @@ MonoBehaviour:
   duracionTotal: 30
   duracionFadeIn: 1.5
   duracionFadeOut: 1.5
-  textoSeguridad: "Ponte c\xF3modo y permanece sentado durante toda la sesi\xF3n.
-    Puedes mirar libremente a tu alrededor moviendo la cabeza. Rel\xE1jate, la experiencia
-    va a comenzar en breve.\n\nGracias por tu atenci\xF3n."
+  textoSeguridad: "Ponte c\xF3modo\n \ny permanece \n\nsentado durante\n \ntoda la
+    sesi\xF3n. \n\nPuedes mirar \n\nlibremente a tu \n\nalrededor moviendo \n\nla
+    cabeza. Rel\xE1jate, \n\nla experiencia va a \n\ncomenzar en breve.\n\nGracias
+    por tu \natenci\xF3n.\n\nGracias por tu atenci\xF3n."
   onPanelFinalizado:
     m_PersistentCalls:
       m_Calls: []
@@ -4759,7 +4760,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 782775327}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e9f365cf844c03449bc8973eead2c3c1, type: 3}
   m_Name: 
@@ -4858,7 +4859,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 782775327}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 75b29b6c6428c984a8a73ffc2d58063b, type: 3}
   m_Name: 

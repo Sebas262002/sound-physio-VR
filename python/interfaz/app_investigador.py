@@ -1122,8 +1122,8 @@ class AppInvestigador:
                     bgcolor=ft.Colors.with_opacity(0.08, Colors.WARNING),
                     content=ft.Text(
                         f"Protocolo de UN día: baseline {DURACION_BASELINE_SEG}s -> UN estímulo "
-                        f"{DURACION_ESTIMULO_SEG}s (Días 2 y 4: preferencia personal, canción distinta "
-                        f"cada día; Días 1 y 3: sorteado entre binaural_theta / "
+                        f"{DURACION_ESTIMULO_SEG}s (Días 2 y 4: preferencia personal, LA MISMA canción "
+                        f"en ambos días; Días 1 y 3: sorteado entre binaural_theta / "
                         f"solfeggio_isocronico_528Hz / paisaje_biofilico, ver "
                         f"asignar_estimulos_dia1_dia3()) -> cierre {DURACION_CIERRE_SEG}s — no se puede "
                         "pausar ni saltar bloques a mitad de camino (ver docstring del módulo). Con "
@@ -1253,6 +1253,24 @@ class AppInvestigador:
         # no dejar arrancar una sesión real con un sensor que ya sabemos que no está.
         if getattr(self, "check_sensor_real", None) is not None and self.check_sensor_real.value and not self._wahoo_ok:
             errores.append("Sensor Wahoo TRACKR no detectado por BLE — verificá que esté prendido y cerca.")
+        # Día 4 (y Día 5, si termina usando preferencia) deben repetir EXACTAMENTE
+        # la misma ruta ya guardada en Día 2 — si el campo queda editable ahí, un
+        # error de tecleo rompe el ancla "mismo estímulo" sin que nadie lo note
+        # (ver hallazgo de auditoría: "misma canción" sobrescribible sin aviso).
+        # Se bloquea en modo lectura SOLO cuando ya hay un valor precargado (ver
+        # _autocompletar_participante_existente) — si no hay nada guardado
+        # todavía, se deja editable para no bloquear el registro. Día 2 NUNCA se
+        # bloquea: a pedido explícito, para poder completarlo ahí si por apuro no
+        # se llenó desde Día 1.
+        campo_pref = getattr(self, "campo_preferencia_wav", None)
+        if campo_pref is not None and getattr(self, "selector_dia", None) is not None:
+            bloqueado = self.selector_dia.value in ("4", "5") and bool((campo_pref.value or "").strip())
+            campo_pref.read_only = bloqueado
+            campo_pref.label = (
+                "Ruta al audio de preferencia personal (bloqueada — repite la de Día 2)"
+                if bloqueado
+                else "Ruta al audio de preferencia personal (obligatorio en Días 2, 4 y 5)"
+            )
         # Días 2 y 4 son SIEMPRE preferencia personal (ver PROTOCOLO POR DÍA en el
         # docstring del módulo) — sin su ruta de WAV ese bloque no tendría qué
         # reproducir. Día 4 repite la MISMA canción del Día 2 (mismo campo, ya no
@@ -1386,6 +1404,32 @@ class AppInvestigador:
             return
 
         datos = self.formulario.obtener_datos()
+
+        # Barrera real contra el Día mal etiquetado: self.selector_dia solo trae una
+        # SUGERENCIA (cantidad de sesiones guardadas + 1, ver
+        # _autocompletar_participante_existente()) que puede quedar desfasada si una
+        # sesión anterior falló a mitad de camino sin guardarse. Acá se compara contra
+        # los días que el participante YA tiene guardados de verdad en la BD (no el
+        # conteo) y se bloquea el registro si dia_sesion se repite — sin esto, un Día 5
+        # real se podría guardar como "Día 3" o "Día 4" sin ningún aviso, y entraría al
+        # contraste H1/H0 con el sesgo de selección que el diseño justamente excluye
+        # (ver EXCLUSIÓN DEL DÍA 5 en analisis_intrasujeto.py).
+        sesiones_previas_bd = self.bd.obtener_sesiones_participante(datos["id_participante"])
+        dias_ya_guardados = {
+            sesion["dia_sesion"]
+            for sesion in sesiones_previas_bd
+            if sesion.get("valida", True) and sesion.get("dia_sesion") is not None
+        }
+        if dia_sesion in dias_ya_guardados:
+            self._mostrar_snack(
+                SnackBarError(
+                    f"{datos['id_participante']} ya tiene una sesión guardada como Día {dia_sesion}. "
+                    "Revisa el selector de Día antes de continuar — si de verdad quieres repetirlo, "
+                    "marca la sesión anterior como inválida primero."
+                )
+            )
+            return
+
         try:
             registrado = self.bd.registrar_participante(
                 datos["id_participante"],
