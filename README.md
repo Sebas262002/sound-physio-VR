@@ -102,13 +102,22 @@ La base de datos vive en un contenedor Docker (SQL Server 2022) definido en `doc
 
 ### 3.5 Reinstalar el proyecto desde cero en otra PC (ej. llevar a la universidad)
 
-Si vas a borrar la carpeta vieja del proyecto en otra PC y pegar una copia nueva (de un disco externo, por ejemplo), lo más simple y seguro es borrar también el volumen de Docker viejo y arrancar uno 100% nuevo — así te evitas que la contraseña SA vieja de esa PC no coincida con la de tu `.env`/`docker-compose.yml` actual (ver "Problemas comunes" más abajo). Desde la raíz del proyecto ya pegado:
+Si vas a borrar la carpeta vieja del proyecto en otra PC y pegar una copia nueva (de un disco externo, por ejemplo), lo más simple y seguro es borrar también el volumen de Docker viejo y arrancar uno 100% nuevo — así te evitas que la contraseña SA vieja de esa PC no coincida con la de tu `.env`/`docker-compose.yml` actual (ver "Problemas comunes" más abajo).
 
-```bash
-docker compose down -v
-docker compose up -d
-docker inspect --format="{{.State.Health.Status}}" tesiskevin-sql
-```
+**Importante: estos comandos NO se escriben dentro de la ventana de Docker Desktop.** Docker Desktop solo necesita estar **abierto y corriendo** en segundo plano (es el "motor" que hace funcionar todo esto) — los comandos se escriben en una terminal normal de Windows (PowerShell, `cmd.exe` o Git Bash), exactamente igual que cualquier otro comando de este README. Pasos:
+
+1. Abre **Docker Desktop** (la aplicación con el ícono de la ballena) y espera a que termine de cargar — no hace falta hacer nada más ahí, solo dejarlo corriendo.
+2. Abre una terminal (PowerShell, `cmd.exe` o Git Bash — la que prefieras).
+3. Ubícate en la raíz del proyecto ya pegado:
+   ```bash
+   cd C:\Tesis_Kevin
+   ```
+4. Borra el volumen viejo y levanta uno nuevo:
+   ```bash
+   docker compose down -v
+   docker compose up -d
+   docker inspect --format="{{.State.Health.Status}}" tesiskevin-sql
+   ```
 
 Repite el `docker inspect` hasta que diga `healthy`, y luego corre el comando del paso 3.4 para crear las tablas (ahora sí sin riesgo de error de contraseña, porque el volumen es nuevo):
 
