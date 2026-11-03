@@ -100,6 +100,24 @@ La base de datos vive en un contenedor Docker (SQL Server 2022) definido en `doc
 
 **Si vuelves a clonar/pegar el proyecto en una PC que YA tenía el volumen de Docker con datos viejos** (ej. reinstalaste la carpeta del proyecto pero el volumen `tesiskevin_sql_data` sigue ahí de antes): no hace falta correr los scripts sueltos `migrar_agregar_usa_vr.py` / `migrar_agregar_dia_valida.py` / `migrar_quitar_preferencia_2.py` uno por uno. Si no te importa perder lo que haya en esa base (ej. eran solo sesiones piloto/de prueba), simplemente vuelve a correr el comando del paso 3.4 — borra y recrea las 3 tablas desde cero, ya con el esquema completo y actualizado, dejando la base vacía y lista. Si en cambio SÍ necesitas conservar datos ya guardados ahí, usa los scripts sueltos en vez del paso 3.4 (no borran filas, solo agregan/quitan columnas).
 
+### 3.5 Reinstalar el proyecto desde cero en otra PC (ej. llevar a la universidad)
+
+Si vas a borrar la carpeta vieja del proyecto en otra PC y pegar una copia nueva (de un disco externo, por ejemplo), lo más simple y seguro es borrar también el volumen de Docker viejo y arrancar uno 100% nuevo — así te evitas que la contraseña SA vieja de esa PC no coincida con la de tu `.env`/`docker-compose.yml` actual (ver "Problemas comunes" más abajo). Desde la raíz del proyecto ya pegado:
+
+```bash
+docker compose down -v
+docker compose up -d
+docker inspect --format="{{.State.Health.Status}}" tesiskevin-sql
+```
+
+Repite el `docker inspect` hasta que diga `healthy`, y luego corre el comando del paso 3.4 para crear las tablas (ahora sí sin riesgo de error de contraseña, porque el volumen es nuevo):
+
+```bash
+docker exec -i tesiskevin-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "Fesa2026/*" -C -i /dev/stdin < docker/init_schema.sql
+```
+
+Después, prueba la conexión (paso 5) y ya puedes abrir la app (paso 6) y arrancar directo con el primer participante real — no hace falta `limpiar_datos_piloto.py` ni los scripts sueltos de ALTER TABLE, el volumen nuevo ya queda limpio y con el esquema completo.
+
 ## 4. Configurar el archivo `.env`
 
 Las credenciales viven en un archivo `.env` en la **raíz del proyecto**, nunca en el código (está en `.gitignore`, no se sube a git). Cópialo desde la plantilla si no lo tienes:
@@ -218,4 +236,4 @@ C:\Tesis_Kevin\
 - **El sensor Wahoo no se detecta:** el escaneo BLE necesita ~12 segundos reales — si tarda menos y falla, probablemente el sensor está apagado o fuera de rango.
 - **VR no responde:** confirma que el proyecto de Unity esté en Play y que el switch de VR se haya intentado activar después de eso (la app hace un ping a Unity al encender el switch).
 - **Contenedor Docker "unhealthy" o caído:** `docker compose up -d` de nuevo; si persiste, revisa logs con `docker logs tesiskevin-sql`.
-- **El comando del paso 3.4 (o la conexión del paso 5) falla por contraseña/login incorrecto:** pasa cuando el volumen de Docker ya existía de antes con una contraseña SA distinta a `Fesa2026/*` (la contraseña real de SQL Server se fija la PRIMERA vez que se crea el volumen; cambiar `MSSQL_SA_PASSWORD` en `docker-compose.yml` después NO la cambia sola). Usa la contraseña real que esa base ya tenía — tanto en el comando del paso 3.4 como en `DB_PASSWORD` del `.env` — o bien borra el volumen (`docker compose down -v`) para arrancar con la contraseña del `docker-compose.yml` actual, si no te importa perder lo que hubiera en esa base.
+- **El comando del paso 3.4 (o la conexión del paso 5) falla por contraseña/login incorrecto:** pasa cuando el volumen de Docker ya existía de antes con una contraseña SA distinta a `Fesa2026/*` (la contraseña real de SQL Server se fija la PRIMERA vez que se crea el volumen; cambiar `MSSQL_SA_PASSWORD` en `docker-compose.yml` después NO la cambia sola). Usa la contraseña real que esa base ya tenía — tanto en el comando del paso 3.4 como en `DB_PASSWORD` del `.env` — o bien borra el volumen (`docker compose down -v`) para arrancar con la contraseña del `docker-compose.yml` actual, si no te importa perder lo que hubiera en esa base (ver paso 3.5).
