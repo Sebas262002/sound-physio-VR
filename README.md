@@ -98,6 +98,8 @@ La base de datos vive en un contenedor Docker (SQL Server 2022) definido en `doc
 - Los datos persisten en un volumen Docker (`tesiskevin_sql_data`) aunque el contenedor se reinicie — solo se pierden si lo borras explícitamente con `docker compose down -v`.
 - Si prefieres usar un SQL Server Express instalado directo en Windows en vez de Docker, es compatible — solo cambia `DB_SERVER` en el `.env` (ver paso 4). El esquema de tablas es el mismo (`docker/init_schema.sql` documenta también el DDL).
 
+**Si vuelves a clonar/pegar el proyecto en una PC que YA tenía el volumen de Docker con datos viejos** (ej. reinstalaste la carpeta del proyecto pero el volumen `tesiskevin_sql_data` sigue ahí de antes): no hace falta correr los scripts sueltos `migrar_agregar_usa_vr.py` / `migrar_agregar_dia_valida.py` / `migrar_quitar_preferencia_2.py` uno por uno. Si no te importa perder lo que haya en esa base (ej. eran solo sesiones piloto/de prueba), simplemente vuelve a correr el comando del paso 3.4 — borra y recrea las 3 tablas desde cero, ya con el esquema completo y actualizado, dejando la base vacía y lista. Si en cambio SÍ necesitas conservar datos ya guardados ahí, usa los scripts sueltos en vez del paso 3.4 (no borran filas, solo agregan/quitan columnas).
+
 ## 4. Configurar el archivo `.env`
 
 Las credenciales viven en un archivo `.env` en la **raíz del proyecto**, nunca en el código (está en `.gitignore`, no se sube a git). Cópialo desde la plantilla si no lo tienes:
@@ -216,3 +218,4 @@ C:\Tesis_Kevin\
 - **El sensor Wahoo no se detecta:** el escaneo BLE necesita ~12 segundos reales — si tarda menos y falla, probablemente el sensor está apagado o fuera de rango.
 - **VR no responde:** confirma que el proyecto de Unity esté en Play y que el switch de VR se haya intentado activar después de eso (la app hace un ping a Unity al encender el switch).
 - **Contenedor Docker "unhealthy" o caído:** `docker compose up -d` de nuevo; si persiste, revisa logs con `docker logs tesiskevin-sql`.
+- **El comando del paso 3.4 (o la conexión del paso 5) falla por contraseña/login incorrecto:** pasa cuando el volumen de Docker ya existía de antes con una contraseña SA distinta a `Fesa2026/*` (la contraseña real de SQL Server se fija la PRIMERA vez que se crea el volumen; cambiar `MSSQL_SA_PASSWORD` en `docker-compose.yml` después NO la cambia sola). Usa la contraseña real que esa base ya tenía — tanto en el comando del paso 3.4 como en `DB_PASSWORD` del `.env` — o bien borra el volumen (`docker compose down -v`) para arrancar con la contraseña del `docker-compose.yml` actual, si no te importa perder lo que hubiera en esa base.
